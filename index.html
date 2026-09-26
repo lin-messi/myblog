@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title id="page-title">我的个人博客</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/backgrounds.css">
+<meta name="description" content="记录代码与生活的诗意瞬间"><meta property="og:title" content="我的个人博客"><meta property="og:description" content="记录代码与生活的诗意瞬间"><meta property="og:type" content="website"><meta property="og:site_name" content="MyBlog"><meta name="twitter:card" content="summary"><link rel="canonical" href="https://lin-messi.github.io/myblog/index.html"><meta property="og:url" content="https://lin-messi.github.io/myblog/index.html"><link rel="alternate" href="feed.xml" type="application/rss+xml"><link rel="stylesheet" href="css/public-site.css"></head>
+<body>
+
+  <!-- ============ 多层视差动态背景 ============ -->
+  <div id="bg-stage" class="bg-stage">
+    <!-- 场景 1: 星空 -->
+    <div class="scene scene-1 active" data-scene="0">
+      <div class="layer stars-far"></div>
+      <div class="layer stars-mid"></div>
+      <div class="layer stars-near"></div>
+      <div class="layer nebula"></div>
+    </div>
+    <!-- 场景 2: 海洋 -->
+    <div class="scene scene-2" data-scene="1">
+      <div class="layer ocean-sky"></div>
+      <div class="layer ocean-wave-far"></div>
+      <div class="layer ocean-wave-mid"></div>
+      <div class="layer ocean-wave-near"></div>
+    </div>
+    <!-- 场景 3: 森林 / 山川 -->
+    <div class="scene scene-3" data-scene="2">
+      <div class="layer forest-sky"></div>
+      <div class="layer forest-mountain-far"></div>
+      <div class="layer forest-mountain-mid"></div>
+      <div class="layer forest-trees"></div>
+    </div>
+    <!-- 场景 4: 极光 -->
+    <div class="scene scene-4" data-scene="3">
+      <div class="layer aurora-sky"></div>
+      <div class="layer aurora-1"></div>
+      <div class="layer aurora-2"></div>
+      <div class="layer aurora-3"></div>
+    </div>
+  </div>
+
+  <!-- 鼠标粒子画布 -->
+  
+
+  <!-- ============ 顶部导航 ============ -->
+  <header class="navbar">
+    <a href="index.html" class="nav-brand" id="nav-brand" title="返回首页">MyBlog</a>
+    <nav class="nav-links">
+      <a href="#hero" data-nav="0">首页</a>
+      <a href="#articles" data-nav="1">文章</a>
+      <a href="#projects" data-nav="2">作品</a>
+      <a href="#contact" data-nav="3">联系</a>
+      
+      
+    </nav>
+  </header>
+
+  <!-- ============ 主内容 ============ -->
+  <main>
+
+    <!-- 板块 1: Hero 首页 -->
+    <section id="hero" class="section section-hero">
+      <div class="hero-content">
+        <h1 class="hero-title" id="hero-brand">MyBlog</h1>
+        <p class="hero-subtitle" id="hero-subtitle">记录代码与生活的诗意瞬间</p>
+        <p class="hero-typewriter"><span id="typewriter">你好，我是开发者</span></p>
+        <div class="hero-actions">
+          <a href="#articles" class="btn btn-primary">阅读文章</a>
+          <a href="#contact" class="btn btn-ghost">联系我</a>
+        </div>
+        <div class="scroll-hint">
+          <span>向下滚动</span>
+          <div class="arrow"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 板块 2: 文章列表 -->
+    <section id="articles" class="section section-articles">
+      <div class="container">
+        <div id="featured-block">
+          <h2 class="section-title">精选文章</h2>
+          <div class="article-grid" id="featured-grid"><a class="card article-card" href="post-a2-1d24ba3a.html"><div class="meta">2026/4/22 · 随笔</div><h3>一个人独立开发者的工作流程</h3><p>从 idea 到上线，记录我作为独立开发者时使用的工具链、时间管理方法以及踩过的坑。</p><div class="tags"><span class="tag">独立开发</span><span class="tag">工作流</span></div></a></div>
+        </div>
+        <h2 class="section-title" id="recent-heading">最近文章</h2>
+        <div class="article-grid" id="article-grid"><a class="card article-card" href="post-a1-1c24b8a7.html"><div class="meta">2026/5/10 · 技术</div><h3>使用 JavaScript 写一个视差滚动背景</h3><p>本文记录了我从零开始实现一个多场景视差滚动背景的过程，包括 CSS 图层堆叠、滚轮事件处理以及性能优化思路。</p><div class="tags"><span class="tag">前端</span><span class="tag">JavaScript</span><span class="tag">动画</span></div></a><a class="card article-card" href="post-a2-1d24ba3a.html"><div class="meta">2026/4/22 · 随笔</div><h3>一个人独立开发者的工作流程</h3><p>从 idea 到上线，记录我作为独立开发者时使用的工具链、时间管理方法以及踩过的坑。</p><div class="tags"><span class="tag">独立开发</span><span class="tag">工作流</span></div></a><a class="card article-card" href="post-a3-1e24bbcd.html"><div class="meta">2026/3/15 · 音乐</div><h3>夜深人静时听过的几张专辑</h3><p>深夜适合独自一人写代码或思考的时候，分享几张我常单曲循环的专辑。</p><div class="tags"><span class="tag">音乐</span><span class="tag">生活</span></div></a></div>
+        <div class="articles-more" id="articles-more" style="display: flex; justify-content: center; margin-top: 32px;">
+          <a href="articles.html" class="btn btn-ghost">查看全部文章 →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 板块 3: 项目作品集 -->
+    <section id="projects" class="section section-projects">
+      <div class="container">
+        <h2 class="section-title">项目作品</h2>
+        <div class="project-grid" id="project-grid"><a class="card" href="#projects" rel="noopener noreferrer"><h3>Parallax Blog</h3><p>一个支持多场景视差滚动的个人博客模板，所见即所得后台。</p></a><a class="card" href="#projects" rel="noopener noreferrer"><h3>小工具集合</h3><p>日常使用的命令行 / Web 小工具集合，涵盖文件转换、截图压缩等。</p></a><a class="card" href="#projects" rel="noopener noreferrer"><h3>NotebookSync</h3><p>基于 Markdown 的轻量笔记同步服务，支持多端实时同步。</p></a></div>
+      </div>
+    </section>
+
+    <!-- 板块 4: 联系 + 资料上传通道 -->
+    <section id="contact" class="section section-contact">
+      <div class="container">
+        <h2 class="section-title">联系与资料</h2>
+
+        <div class="contact-grid">
+
+          <!-- 联系信息 / 留言板 -->
+          <div class="card contact-card"><h3>联系方式</h3><ul class="contact-list"><li><strong>Email</strong> <a href="mailto:you@example.com">you@example.com</a></li><li><strong>GitHub</strong> <a href="https://github.com/">github.com/yourname</a></li><li><strong>Twitter</strong> @yourname</li></ul><p class="public-note">如需交流或发送资料，请使用以上联系方式。</p></div>
+
+          <!-- 资料上传通道 -->
+          <div class="card upload-card"><h3>公开资料下载</h3><p class="public-note">暂时没有公开下载的资料。</p></div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p id="footer-text">© 2026 MyBlog · Powered by 自己</p>
+  <a href="feed.xml">RSS 订阅</a></footer>
+
+  <!-- 背景音乐（默认无音频，可在 admin 后台传入或更换） -->
+  
+
+  <!-- 入口脚本（传统脚本，按依赖顺序加载，支持 file:// 双击直接打开） -->
+  
+  
+  
+  
+  
+  
+  
+
+
+<script src="js/backgrounds.js"></script><script src="js/public-site.js" defer=""></script></body></html>
