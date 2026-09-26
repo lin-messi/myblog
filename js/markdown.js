@@ -13,65 +13,392 @@
       .replace(/'/g, '&#39;');
   }
 
-  // ============ 轻量代码高亮（关键字 / 字符串 / 注释 / 数字） ============
-  const KEYWORDS = {
-    js: 'var let const function return if else for while do switch case break continue new class extends super this typeof instanceof try catch finally throw async await yield import export default from null undefined true false void delete in of',
-    ts: 'var let const function return if else for while interface type enum class extends implements public private protected readonly async await import export default from null undefined true false void number string boolean any',
-    py: 'def class return if elif else for while import from as try except finally raise with lambda yield global nonlocal pass break continue True False None and or not in is async await',
-    html: '',
-    css: '',
-    json: 'true false null',
-    bash: 'if then else fi for do done while case esac function return echo cd ls export source',
-    sql: 'SELECT FROM WHERE INSERT INTO UPDATE DELETE CREATE TABLE DROP ALTER JOIN LEFT RIGHT INNER OUTER ON GROUP BY ORDER LIMIT AND OR NOT NULL VALUES SET',
+  // ============ 代码高亮，配色对齐 VS Code Dark+ ============
+  const LANG_ALIAS = {
+    javascript: 'js', jsx: 'js', node: 'js', mjs: 'js', cjs: 'js',
+    typescript: 'ts', tsx: 'ts',
+    python: 'py', py3: 'py',
+    sh: 'bash', shell: 'bash', zsh: 'bash', console: 'bash', terminal: 'bash', bash: 'bash',
+    yml: 'yaml',
+    'c++': 'cpp', cc: 'cpp', cxx: 'cpp', h: 'cpp', hpp: 'cpp', hh: 'cpp',
+    xml: 'html', svg: 'html', htm: 'html',
   };
 
-  // 代码块专用转义：只处理 & < >，保留引号，便于字符串高亮正则匹配
   function escapeCode(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
+  function span(cls, text) {
+    const body = escapeCode(text);
+    return cls ? `<span class="tok-${cls}">${body}</span>` : body;
+  }
+  function readString(code, i, quote) {
+    let j = i + 1;
+    while (j < code.length) {
+      if (code[j] === '\\') { j += 2; continue; }
+      if (code[j] === quote) return j + 1;
+      if (quote !== '`' && code[j] === '\n') return j;
+      j++;
+    }
+    return code.length;
+  }
+  function readNumber(code, i) {
+    let j = i;
+    if (code.slice(j, j + 2).toLowerCase() === '0x') {
+      j += 2;
+      while (j < code.length && /[0-9a-fA-F]/.test(code[j])) j++;
+      return j;
+    }
+    while (j < code.length && /[0-9]/.test(code[j])) j++;
+    if (code[j] === '.' && /[0-9]/.test(code[j + 1] || '')) {
+      j++;
+      while (j < code.length && /[0-9]/.test(code[j])) j++;
+    }
+    return j;
+  }
+
+  function mapWords(list, cls) {
+    const out = {};
+    list.split(/\s+/).forEach(word => { if (word) out[word] = cls; });
+    return out;
+  }
+
+  const JS_WORDS = Object.assign(
+    mapWords('if else for while do switch case break continue return try catch finally throw new typeof instanceof in of import export from default delete yield await', 'key'),
+    mapWords('var let const function class extends async static get set void this super true false null undefined', 'type')
+  );
+  const TS_WORDS = Object.assign({}, JS_WORDS, mapWords('interface type enum implements public private protected readonly namespace abstract declare as is keyof infer never unknown any number string boolean', 'type'));
+  const PY_WORDS = Object.assign(
+    mapWords('if elif else for while return try except finally raise with yield import from as pass break continue and or not in is lambda global nonlocal async await', 'key'),
+    mapWords('def class True False None self cls', 'type')
+  );
+  const CPP_WORDS = Object.assign(
+    mapWords('if else for while do switch case break continue return goto sizeof new delete try catch throw using namespace template typename public private protected virtual operator', 'key'),
+    mapWords('const static extern inline volatile typedef struct enum union class int long short char float double void bool auto unsigned signed true false nullptr NULL this include define ifdef ifndef endif pragma once', 'type')
+  );
+  const SQL_WORDS = Object.assign(
+    mapWords('select from where insert into update delete create table drop alter join left right inner outer on group by order limit and or not as set values having union distinct between like is in exists', 'key'),
+    mapWords('null true false', 'type')
+  );
+
+  function highlightCode(code, words, spec) {
+    let i = 0;
+    let out = '';
+    const n = code.length;
+    while (i < n) {
+      if (/\s/.test(code[i])) {
+        let j = i + 1;
+        while (j < n && /\s/.test(code[j])) j++;
+        out += code.slice(i, j);
+        i = j;
+        continue;
+      }
+      if (spec.line && code.startsWith(spec.line, i)) {
+        let j = code.indexOf('\n', i);
+        if (j < 0) j = n;
+        out += span('comment', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (spec.block && code.startsWith(spec.block[0], i)) {
+        const end = spec.block[1];
+        let j = code.indexOf(end, i + spec.block[0].length);
+        j = j < 0 ? n : j + end.length;
+        out += span('comment', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (spec.triple && (code.startsWith('"""', i) || code.startsWith("'''", i))) {
+        const q = code.slice(i, i + 3);
+        let j = code.indexOf(q, i + 3);
+        j = j < 0 ? n : j + 3;
+        out += span('string', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      const q = code[i];
+      if (q === '"' || q === "'" || (q === '`' && spec.template)) {
+        const j = readString(code, i, q);
+        out += span('string', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (spec.hash && q === '#' && (i === 0 || code[i - 1] === '\n')) {
+        let j = i + 1;
+        while (j < n && /[A-Za-z_]/.test(code[j])) j++;
+        out += span('key', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (/[0-9]/.test(q) || (q === '.' && /[0-9]/.test(code[i + 1] || ''))) {
+        const j = readNumber(code, i);
+        out += span('num', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (/[A-Za-z_$]/.test(q)) {
+        let j = i + 1;
+        while (j < n && /[\w$]/.test(code[j])) j++;
+        const word = code.slice(i, j);
+        const known = words[word] || words[word.toLowerCase()];
+        let cls = known || '';
+        if (!cls) {
+          let k = j;
+          while (k < n && /\s/.test(code[k])) k++;
+          if (code[k] === '(') cls = 'fn';
+          else if (/^[A-Z]/.test(word)) cls = 'class';
+        }
+        out += span(cls, word);
+        i = j;
+        continue;
+      }
+      out += escapeCode(q);
+      i++;
+    }
+    return out;
+  }
+
+  function highlightShell(code) {
+    const keywords = new Set('if then else elif fi for do done while until case esac function return in select time'.split(' '));
+    let i = 0;
+    let out = '';
+    let expectCmd = true;
+    const n = code.length;
+    while (i < n) {
+      const ch = code[i];
+      if (ch === '\n' || ch === ';' || ch === '|' || (ch === '&' && code[i + 1] === '&')) {
+        expectCmd = true;
+        out += escapeCode(ch === '&' ? '&&' : ch);
+        i += ch === '&' ? 2 : 1;
+        continue;
+      }
+      if (/\s/.test(ch)) { out += ch; i++; continue; }
+      if (ch === '#' && code[i - 1] !== '$') {
+        let j = code.indexOf('\n', i);
+        if (j < 0) j = n;
+        out += span('comment', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        const j = readString(code, i, ch);
+        out += span('string', code.slice(i, j));
+        i = j;
+        expectCmd = false;
+        continue;
+      }
+      if (ch === '$') {
+        let j = i + 1;
+        if (code[j] === '{') {
+          const end = code.indexOf('}', j);
+          j = end < 0 ? n : end + 1;
+        } else if (code[j] === '(') {
+          out += span('var', '$');
+          i++;
+          continue;
+        } else {
+          while (j < n && /[\w]/.test(code[j])) j++;
+          if (j === i + 1) j++;
+        }
+        out += span('var', code.slice(i, j));
+        i = j;
+        expectCmd = false;
+        continue;
+      }
+      if (/[0-9]/.test(ch)) {
+        const j = readNumber(code, i);
+        out += span('num', code.slice(i, j));
+        i = j;
+        expectCmd = false;
+        continue;
+      }
+      if (/[A-Za-z_./~-]/.test(ch)) {
+        let j = i + 1;
+        while (j < n && /[\w./:=~+-]/.test(code[j])) j++;
+        const word = code.slice(i, j);
+        let cls = '';
+        if (keywords.has(word)) { cls = 'key'; expectCmd = word === 'do' || word === 'then' || word === 'else'; }
+        else if (/^-{1,2}[\w.-]+$/.test(word)) cls = 'attr';
+        else if (expectCmd && !word.startsWith('-')) { cls = 'fn'; expectCmd = false; }
+        else expectCmd = false;
+        out += span(cls, word);
+        i = j;
+        continue;
+      }
+      out += escapeCode(ch);
+      i++;
+    }
+    return out;
+  }
+
+  function highlightMarkup(code) {
+    let i = 0;
+    let out = '';
+    const n = code.length;
+    while (i < n) {
+      if (code.startsWith('<!--', i)) {
+        let j = code.indexOf('-->', i + 4);
+        j = j < 0 ? n : j + 3;
+        out += span('comment', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (code[i] === '<') {
+        out += '&lt;';
+        i++;
+        if (code[i] === '/') { out += '/'; i++; }
+        let j = i;
+        while (j < n && /[A-Za-z0-9:_-]/.test(code[j])) j++;
+        if (j > i) out += span('type', code.slice(i, j));
+        i = j;
+        while (i < n && code[i] !== '>') {
+          if (code[i] === '"' || code[i] === "'") {
+            const end = readString(code, i, code[i]);
+            out += span('string', code.slice(i, end));
+            i = end;
+            continue;
+          }
+          if (/[A-Za-z_:]/.test(code[i])) {
+            let k = i + 1;
+            while (k < n && /[\w:.-]/.test(code[k])) k++;
+            out += span('attr', code.slice(i, k));
+            i = k;
+            continue;
+          }
+          out += escapeCode(code[i]);
+          i++;
+        }
+        if (code[i] === '>') { out += '&gt;'; i++; }
+        continue;
+      }
+      let j = code.indexOf('<', i);
+      if (j < 0) j = n;
+      out += escapeCode(code.slice(i, j));
+      i = j;
+    }
+    return out;
+  }
+
+  function highlightCss(code) {
+    let i = 0;
+    let out = '';
+    let inBlock = false;
+    const n = code.length;
+    while (i < n) {
+      if (code.startsWith('/*', i)) {
+        let j = code.indexOf('*/', i + 2);
+        j = j < 0 ? n : j + 2;
+        out += span('comment', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (code[i] === '"' || code[i] === "'") {
+        const j = readString(code, i, code[i]);
+        out += span('string', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (code[i] === '{') { inBlock = true; out += '{'; i++; continue; }
+      if (code[i] === '}') { inBlock = false; out += '}'; i++; continue; }
+      if (/[0-9]/.test(code[i]) || (code[i] === '.' && inBlock && /[0-9]/.test(code[i + 1] || ''))) {
+        const j = readNumber(code, i);
+        let k = j;
+        while (k < n && /[a-z%]/i.test(code[k])) k++;
+        out += span('num', code.slice(i, k));
+        i = k;
+        continue;
+      }
+      if (inBlock && /[A-Za-z_-]/.test(code[i])) {
+        let j = i + 1;
+        while (j < n && /[\w-]/.test(code[j])) j++;
+        let k = j;
+        while (k < n && /\s/.test(code[k])) k++;
+        const word = code.slice(i, j);
+        if (code[k] === ':') out += span('attr', word);
+        else if (/^(important|inherit|initial|unset|none|auto|solid|bold)$/.test(word)) out += span('key', word);
+        else out += span('', word);
+        i = j;
+        continue;
+      }
+      if (!inBlock && /[.#@A-Za-z_-]/.test(code[i])) {
+        let j = i + 1;
+        while (j < n && /[\w-]/.test(code[j])) j++;
+        const word = code.slice(i, j);
+        const cls = word[0] === '@' ? 'key' : word[0] === '.' ? 'class' : word[0] === '#' ? 'var' : '';
+        out += span(cls, word);
+        i = j;
+        continue;
+      }
+      out += escapeCode(code[i]);
+      i++;
+    }
+    return out;
+  }
+
+  function highlightJson(code) {
+    let i = 0;
+    let out = '';
+    const n = code.length;
+    while (i < n) {
+      if (code[i] === '"') {
+        const j = readString(code, i, '"');
+        let k = j;
+        while (k < n && /\s/.test(code[k])) k++;
+        out += span(code[k] === ':' ? 'attr' : 'string', code.slice(i, j));
+        i = j;
+        continue;
+      }
+      if (/[0-9-]/.test(code[i]) && (code[i] !== '-' || /[0-9]/.test(code[i + 1] || ''))) {
+        const start = i;
+        if (code[i] === '-') i++;
+        const j = readNumber(code, i);
+        out += span('num', code.slice(start, j));
+        i = j;
+        continue;
+      }
+      if (/[A-Za-z]/.test(code[i])) {
+        let j = i + 1;
+        while (j < n && /[A-Za-z]/.test(code[j])) j++;
+        const word = code.slice(i, j);
+        out += /^(true|false|null)$/.test(word) ? span('type', word) : escapeCode(word);
+        i = j;
+        continue;
+      }
+      out += escapeCode(code[i]);
+      i++;
+    }
+    return out;
+  }
+
+  function highlightYaml(code) {
+    return code.split('\n').map(line => {
+      const commentAt = line.search(/(^|\s)#/);
+      const head = commentAt >= 0 ? line.slice(0, commentAt) : line;
+      const tail = commentAt >= 0 ? span('comment', line.slice(commentAt)) : '';
+      const key = head.match(/^(\s*-?\s*)([^:#\n][^:#]*?)(\s*)(:)(.*)$/);
+      if (!key) return highlightCode(head, {}, { line: '#' }) + tail;
+      const value = key[5];
+      let painted = value;
+      if (/^\s*(true|false|null|yes|no)\s*$/i.test(value)) painted = span('type', value);
+      else if (/^\s*-?\d+(\.\d+)?\s*$/.test(value)) painted = span('num', value);
+      else if (/['"]/.test(value)) painted = highlightCode(value, {}, { line: '#' });
+      return escapeCode(key[1]) + span('attr', key[2]) + escapeCode(key[3]) + ':' + painted + tail;
+    }).join('\n');
+  }
 
   function highlight(code, lang) {
-    lang = (lang || '').toLowerCase();
-    const escaped = escapeCode(code);
-    const kwStr = KEYWORDS[lang];
-    // 未指定语言、未知语言（如 c++/text）以及无需深度高亮的语言，都按普通代码返回
-    if (!kwStr) return escaped;
-
-    const tokens = [];
-    let out = escaped;
-    // 占位符索引用字母 a-j 编码，避免被「数字高亮」正则误伤
-    const enc = (n) => String(n).replace(/[0-9]/g, d => 'abcdefghij'[+d]);
-    const dec = (s) => +s.replace(/[a-j]/g, c => 'abcdefghij'.indexOf(c));
-
-    // 用占位符保护字符串和注释，避免被关键字规则破坏
-    function stash(re, cls) {
-      out = out.replace(re, (m) => {
-        const i = tokens.length;
-        tokens.push(`<span class="tok-${cls}">${m}</span>`);
-        return `\u0000${enc(i)}\u0000`;
-      });
-    }
-    // 注释
-    if (lang === 'py' || lang === 'bash') stash(/#[^\n]*/g, 'comment');
-    else if (lang === 'sql') stash(/--[^\n]*/g, 'comment');
-    else { stash(/\/\/[^\n]*/g, 'comment'); stash(/\/\*[\s\S]*?\*\//g, 'comment'); }
-    // 字符串
-    stash(/"(?:[^"\\]|\\.)*"/g, 'string');
-    stash(/'(?:[^'\\]|\\.)*'/g, 'string');
-    stash(/`(?:[^`\\]|\\.)*`/g, 'string');
-
-    // 关键字
-    const kws = kwStr.split(/\s+/).filter(Boolean);
-    if (kws.length) {
-      const re = new RegExp('\\b(' + kws.join('|') + ')\\b', 'g');
-      out = out.replace(re, '<span class="tok-key">$1</span>');
-    }
-    // 数字
-    out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-num">$1</span>');
-
-    // 还原占位符
-    out = out.replace(/\u0000([a-j]+)\u0000/g, (m, i) => tokens[dec(i)]);
-    return out;
+    const raw = String(lang || '').toLowerCase();
+    const name = LANG_ALIAS[raw] || raw;
+    if (name === 'bash') return highlightShell(code);
+    if (name === 'html') return highlightMarkup(code);
+    if (name === 'css') return highlightCss(code);
+    if (name === 'json') return highlightJson(code);
+    if (name === 'yaml') return highlightYaml(code);
+    if (name === 'js') return highlightCode(code, JS_WORDS, { line: '//', block: ['/*', '*/'], template: true });
+    if (name === 'ts') return highlightCode(code, TS_WORDS, { line: '//', block: ['/*', '*/'], template: true });
+    if (name === 'py') return highlightCode(code, PY_WORDS, { line: '#', triple: true });
+    if (name === 'cpp' || name === 'c') return highlightCode(code, CPP_WORDS, { line: '//', block: ['/*', '*/'], hash: true });
+    if (name === 'sql') return highlightCode(code, SQL_WORDS, { line: '--', block: ['/*', '*/'] });
+    return highlightCode(code, {}, { line: '//', block: ['/*', '*/'] });
   }
 
   // ============ 内联解析 ============

@@ -166,15 +166,19 @@
 .md-body th { background: rgba(255,255,255,.06); }
 
 /* 代码块 + 复制按钮 + 高亮 token */
-.code-block { margin: 1.1em 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); background: #11131f; }
-.code-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: rgba(255,255,255,.05); }
+.code-block { margin: 1.1em 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); background: #1e1e1e; }
+.code-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: #252526; }
 .code-lang { font-size: 12px; color: #8b93ad; text-transform: uppercase; letter-spacing: .05em; }
 .code-copy { font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16); color: #cdd5e8; }
 .code-copy:hover { background: rgba(255,255,255,.2); }
 .code-copy.copied { background: #16a34a; color: #fff; border-color: transparent; }
 .code-block pre { margin: 0; padding: 14px 16px; overflow-x: auto; }
-.code-block code { font: 13px/1.6 'Consolas','Menlo',monospace; color: #e6e9f2; }
-.tok-key { color: #c792ea; }
-.tok-string { color: #c3e88d; }
-.tok-comment { color: #6b7394; font-style: italic; }
-.tok-num { color: #f78c6c; }
+.code-block code { font: 13px/1.6 Consolas, 'Cascadia Code', Menlo, monospace; color: #d4d4d4; }
+.tok-key { color: #c586c0; }
+.tok-type { color: #569cd6; }
+.tok-fn { color: #dcdcaa; }
+.tok-class { color: #4ec9b0; }
+.tok-var, .tok-attr { color: #9cdcfe; }
+.tok-string { color: #ce9178; }
+.tok-num { color: #b5cea8; }
+.tok-comment { color: #6a9955; font-style: italic; }
