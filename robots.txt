@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://lin-messi.github.io/myblog/sitemap.xml

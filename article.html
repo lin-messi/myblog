@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文章 · MyBlog</title>
+  <meta name="description" content="" />
+  <meta property="og:title" content="" />
+  <meta property="og:description" content="" />
+  <link rel="stylesheet" href="css/article.css?v=1" />
+  <link rel="stylesheet" href="css/editor.css?v=1" />
+</head>
+<body class="article-page">
+  <div class="page-bg"></div>
+
+  <header class="topbar">
+    <a href="index.html" class="brand" id="nav-brand">MyBlog</a>
+    <a href="index.html">首页</a>
+    <a href="articles.html">全部文章</a>
+    <span class="spacer"></span>
+    <a href="admin.html">⚙ 后台</a>
+  </header>
+
+  <div class="article-wrap" id="article-wrap">
+    <div class="article-main">
+      <div class="loading" id="loading">正在加载文章…</div>
+
+      <article id="article-root" hidden>
+        <img class="article-cover" id="art-cover" hidden alt="封面" />
+        <div class="article-header">
+          <h1 id="art-title"></h1>
+          <div class="article-info">
+            <span class="cat" id="art-cat"></span>
+            <span id="art-date"></span>
+            <span id="art-rt"></span>
+            <span id="art-views"></span>
+          </div>
+          <div class="article-tags" id="art-tags"></div>
+        </div>
+
+        <details class="toc-mobile" id="toc-mobile" hidden>
+          <summary>目录</summary>
+          <ul id="toc-list-mobile"></ul>
+        </details>
+
+        <div class="md-body article-content" id="art-content"></div>
+
+        <div class="like-bar">
+          <button class="like-btn" id="like-btn">
+            <span class="heart">♡</span><span id="like-count">0</span>
+          </button>
+          <span style="color:var(--muted);font-size:13px;">如果这篇文章对你有帮助，点个赞吧</span>
+        </div>
+
+        <div class="prev-next" id="prev-next"></div>
+
+        <section class="related" id="related-sec" hidden>
+          <h3>相关文章</h3>
+          <div class="related-grid" id="related-grid"></div>
+        </section>
+
+        <section class="comments">
+          <h3>评论 <span id="comment-num" style="color:var(--muted);font-size:.7em;"></span></h3>
+          <form class="comment-form" id="comment-form">
+            <input type="text" id="c-name" placeholder="你的昵称" maxlength="20" required />
+            <textarea id="c-content" placeholder="留下你的想法…" rows="3" maxlength="500" required></textarea>
+            <button type="submit">发表评论</button>
+          </form>
+          <div class="comment-list" id="comment-list"></div>
+        </section>
+      </article>
+    </div>
+
+    <aside class="toc-side" id="toc-side" hidden>
+      <h4>目录</h4>
+      <ul id="toc-list"></ul>
+    </aside>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/article-view.js"></script>
+</body>
+</html>
