@@ -183,9 +183,10 @@
       return shapePublic(await res.json());
     }
     if (isPublicMirror()) {
-      const stamp = Date.now();
-      let res = await fetch('https://raw.githubusercontent.com/lin-messi/myblog/main/published.json?t=' + stamp, { cache: 'no-store' });
-      if (!res.ok) res = await fetch('published.json?t=' + stamp, { cache: 'no-store' });
+      let res = await fetch('https://api.github.com/repos/lin-messi/myblog/contents/published.json', {
+        headers: { Accept: 'application/vnd.github.raw' }, cache: 'no-store',
+      });
+      if (!res.ok) res = await fetch('published.json?t=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) throw new Error('无法读取网站内容');
       return shapePublic(await res.json());
     }
