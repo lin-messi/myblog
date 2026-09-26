@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>后台管理 · MyBlog</title>
+  <link rel="stylesheet" href="css/admin.css?v=3" />
+  <link rel="stylesheet" href="css/editor.css?v=3" />
+</head>
+<body>
+
+  <!-- 登录页 -->
+  <div id="login-view" class="view">
+    <div class="login-box">
+      <h1>后台登录</h1>
+      <div id="github-login" hidden>
+        <p class="hint">从公开网站进入后台。文章保存在 GitHub 私有仓库，换电脑也能打开。</p>
+        <label for="login-token">GitHub 令牌</label>
+        <input id="login-token" type="password" placeholder="ghp_ 开头的令牌" autocomplete="off" />
+        <p class="hint"><a href="https://github.com/settings/tokens/new?scopes=repo&description=MyBlog%20admin" target="_blank" rel="noopener">新建令牌</a>，勾选 repo 权限。令牌只留在这个浏览器里。</p>
+        <p id="github-token-saved" class="hint" hidden>这台浏览器已保存令牌，直接输入密码。<button type="button" id="github-token-reset">更换令牌</button></p>
+      </div>
+      <p class="hint" id="local-login-hint">默认密码：<code>admin123</code>（登录后请尽快修改）</p>
+      <input type="password" id="login-password" placeholder="请输入密码" autofocus />
+      <button id="login-btn">登录</button>
+      <p id="login-error" class="err"></p>
+      <a href="index.html" class="back-link">← 返回博客首页</a>
+    </div>
+  </div>
+
+  <!-- 后台主界面 -->
+  <div id="admin-view" class="view" hidden>
+    <header class="admin-header">
+      <h1>后台管理</h1>
+      <p id="live-publish-note" class="hint" hidden></p>
+      <div class="admin-actions">
+        <a href="index.html" class="btn-ghost">查看博客</a>
+        <button id="export-site-btn" class="btn-primary">导出网站</button>
+        <button id="export-btn" class="btn-ghost">导出 JSON</button>
+        <label class="btn-ghost" style="cursor:pointer;">
+          导入 JSON
+          <input type="file" id="import-input" accept="application/json" hidden />
+        </label>
+        <button id="logout-btn" class="btn-danger">退出</button>
+      </div>
+    </header>
+
+    <nav class="admin-tabs">
+      <button class="tab active" data-tab="site">站点设置</button>
+      <button class="tab" data-tab="articles">文章管理</button>
+      <button class="tab" data-tab="projects">项目管理</button>
+      <button class="tab" data-tab="contacts">联系方式</button>
+      <button class="tab" data-tab="messages">留言审核</button>
+      <button class="tab" data-tab="comments">评论审核</button>
+      <button class="tab" data-tab="uploads">附件管理</button>
+      <button class="tab" data-tab="password">修改密码</button>
+    </nav>
+
+    <main class="admin-main">
+
+      <!-- 站点设置 -->
+      <section class="panel" data-panel="site">
+        <h2>站点设置</h2>
+        <div class="form-row">
+          <label>浏览器标签标题</label>
+          <input type="text" id="site-title" maxlength="60" />
+        </div>
+        <div class="form-row">
+          <label>顶栏品牌名（导航左上）</label>
+          <input type="text" id="site-brand" maxlength="30" />
+        </div>
+        <div class="form-row">
+          <label>首页打字机标语（每行一句，会自动循环切换）</label>
+          <textarea id="site-hero-titles" rows="4"></textarea>
+        </div>
+        <div class="form-row">
+          <label>首页副标题</label>
+          <input type="text" id="site-hero-subtitle" maxlength="120" />
+        </div>
+        <div class="form-row">
+          <label>页脚文字</label>
+          <input type="text" id="site-footer" maxlength="120" />
+        </div>
+        <div class="form-row">
+          <label>背景音乐链接（可选，mp3/wav）</label>
+          <input type="text" id="site-music-url" placeholder="https://... 或 assets/bg.mp3" />
+        </div>
+        <button class="btn-primary" data-save="site">保存站点设置</button>
+      </section>
+
+      <!-- 文章管理 -->
+      <section class="panel" data-panel="articles" hidden>
+        <h2>文章管理</h2>
+        <div class="art-toolbar">
+          <div class="art-statustabs" id="art-statustabs">
+            <span class="stab active" data-st="all">全部</span>
+            <span class="stab" data-st="published">已发布</span>
+            <span class="stab" data-st="draft">草稿</span>
+            <span class="stab" data-st="unpublished">已下架</span>
+          </div>
+          <input type="text" id="art-search" class="art-search" placeholder="搜索标题 / 标签 / 分类…" />
+          <button class="btn-primary" id="add-article">＋ 写文章</button>
+          <label class="btn-ghost" style="cursor:pointer;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.16);">
+            导入 .md
+            <input type="file" id="import-md" accept=".md,.markdown,text/markdown" hidden />
+          </label>
+        </div>
+        <div id="art-list" class="art-list"></div>
+      </section>
+
+      <!-- 项目管理 -->
+      <section class="panel" data-panel="projects" hidden>
+        <h2>项目管理</h2>
+        <button class="btn-primary" id="add-project">＋ 添加项目</button>
+        <div id="project-editor" class="editor-list"></div>
+        <button class="btn-primary" data-save="projects">保存项目</button>
+      </section>
+
+      <!-- 联系方式 -->
+      <section class="panel" data-panel="contacts" hidden>
+        <h2>联系方式</h2>
+        <button class="btn-primary" id="add-contact">＋ 添加联系方式</button>
+        <div id="contact-editor" class="editor-list"></div>
+        <button class="btn-primary" data-save="contacts">保存联系方式</button>
+      </section>
+
+      <!-- 留言 -->
+      <section class="panel" data-panel="messages" hidden>
+        <h2>留言审核</h2>
+        <p class="hint">点击单条「删除」可移除该留言</p>
+        <div id="message-editor" class="editor-list"></div>
+      </section>
+
+      <!-- 评论审核 -->
+      <section class="panel" data-panel="comments" hidden>
+        <h2>评论审核</h2>
+        <p class="hint">查看文章评论，可删除不当评论</p>
+        <div id="comment-editor" class="editor-list"></div>
+      </section>
+
+      <!-- 附件管理 -->
+      <section class="panel" data-panel="uploads" hidden>
+        <h2>附件管理</h2>
+        <p class="hint">查看访客上传的附件（保存在本浏览器），可删除</p>
+        <div id="upload-editor" class="editor-list"></div>
+      </section>
+
+      <!-- 修改密码 -->
+      <section class="panel" data-panel="password" hidden>
+        <h2>修改后台密码</h2>
+        <div class="form-row">
+          <label>当前密码</label>
+          <input type="password" id="pw-current" />
+        </div>
+        <div class="form-row">
+          <label>新密码（至少 4 位）</label>
+          <input type="password" id="pw-new" />
+        </div>
+        <div class="form-row">
+          <label>再次输入新密码</label>
+          <input type="password" id="pw-confirm" />
+        </div>
+        <button class="btn-primary" id="change-pw-btn">修改密码</button>
+        <p id="pw-msg" class="hint"></p>
+      </section>
+
+    </main>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <dialog id="export-site-dialog" class="export-dialog" aria-labelledby="export-site-heading">
+    <form id="export-site-form">
+      <h2 id="export-site-heading">导出可独立访问的网站</h2>
+      <p class="export-note" id="export-site-summary"></p>
+      <label for="export-site-url">正式网址（可选）</label>
+      <input id="export-site-url" type="url" placeholder="https://example.com/blog/" />
+      <p class="export-note">填写网站将使用的完整地址，可包含子目录。填写后会生成站点地图、RSS 和分享链接；留空则生成可独立阅读的预览版。</p>
+      <fieldset><legend>公开下载的附件</legend><p class="export-note">只打包勾选的附件。文章中的图片会自动打包。</p><div id="export-site-files"></div></fieldset>
+      <p class="export-note">仅导出已发布文章；草稿、修订、密码和留言记录不公开。访客可阅读、搜索和下载，暂不提供在线评论、点赞和上传。</p>
+      <p id="export-site-status" role="status" aria-live="polite"></p>
+      <div class="export-actions"><button type="button" id="export-site-cancel" class="btn-ghost">关闭</button><button type="submit" id="export-site-download" class="btn-primary">生成并下载 ZIP</button></div>
+    </form>
+  </dialog>
+
+  <script src="js/storage.js"></script>
+  <script src="js/markdown.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/upload.js"></script>
+  <script src="js/zip.js"></script>
+  <script src="js/site-export.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>

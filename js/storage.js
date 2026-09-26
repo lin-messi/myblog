@@ -159,8 +159,75 @@
   }
 
   // 强制重新读取最新数据（本地或远端），用于保存前合并与跨标签页冲突检查
+  const GITHUB_TOKEN_KEY = 'myblog_github_token';
+  const PRIVATE_REPO = 'lin-messi/myblog-data';
+  const PUBLIC_REPO = 'lin-messi/myblog';
   function isPublicMirror() {
     return /(^|\.)github\.io$/.test(location.hostname);
+  }
+  function githubToken() {
+    try { return localStorage.getItem(GITHUB_TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setGithubToken(token) {
+    if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
+    else localStorage.removeItem(GITHUB_TOKEN_KEY);
+  }
+  function remoteAdmin() {
+    return isPublicMirror() && /admin\.html$/.test(location.pathname) && !!githubToken();
+  }
+  function utf8ToBase64(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+  function base64ToUtf8(text) {
+    const binary = atob(String(text).replace(/\n/g, ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  async function githubContents(token, repo, file, method, body) {
+    const res = await fetch('https://api.github.com/repos/' + repo + '/contents/' + file, {
+      method: method || 'GET',
+      cache: 'no-store',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 404) return null;
+    if (res.status === 401 || res.status === 403) throw new Error('GitHub 令牌无效、过期，或没有仓库权限');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'GitHub 返回 ' + res.status);
+    }
+    return res.json();
+  }
+  async function readPrivateBlog() {
+    const meta = await githubContents(githubToken(), PRIVATE_REPO, 'blog.json');
+    if (!meta || !meta.content) throw new Error('还没有云端博客数据');
+    return JSON.parse(base64ToUtf8(meta.content));
+  }
+  function publishedPayload(data) {
+    const view = shapePublic(data);
+    view.articles = view.articles.map(a => ({
+      id: a.id, title: a.title || '', slug: a.slug || '', category: a.category || '未分类',
+      tags: Array.isArray(a.tags) ? a.tags : [], cover: a.cover || '', excerpt: a.excerpt || '',
+      body: a.body || '', status: 'published', pinned: !!a.pinned, featured: !!a.featured,
+      publishedAt: a.publishedAt, updatedAt: a.updatedAt, views: a.views || 0, likes: a.likes || 0,
+      comments: (a.comments || []).map(c => ({ name: String(c.name || ''), content: String(c.content || ''), time: c.time || '' })),
+    }));
+    view.messages = (view.messages || []).map(m => ({ id: m.id, name: String(m.name || ''), content: String(m.content || ''), time: m.time || '' }));
+    return view;
+  }
+  async function putGithubJson(token, repo, file, value, message) {
+    const meta = await githubContents(token, repo, file);
+    const body = { message, content: utf8ToBase64(JSON.stringify(value)), branch: 'main' };
+    if (meta && meta.sha) body.sha = meta.sha;
+    await githubContents(token, repo, file, 'PUT', body);
   }
   function shapePublic(data) {
     const site = data.site || {};
@@ -194,6 +261,10 @@
   }
 
   async function loadDataFresh() {
+    if (remoteAdmin()) {
+      _cache = mergeDefault(await readPrivateBlog());
+      return _cache;
+    }
     if (window.BLOG_API_BASE) {
       try {
         const res = await fetch(`${window.BLOG_API_BASE}/config`, { cache: 'no-store', credentials: 'same-origin' });
@@ -216,10 +287,36 @@
     return _cache;
   }
 
+  let lastPublishedJson = '';
+  let remoteChain = Promise.resolve();
+  function enqueueRemoteSave(task) {
+    const run = remoteChain.then(task, task);
+    remoteChain = run.then(() => {}, () => {});
+    return run;
+  }
+
   async function saveData(patch) {
+    if (remoteAdmin()) return enqueueRemoteSave(() => persistPatch(patch));
+    return persistPatch(patch);
+  }
+
+  async function persistPatch(patch) {
     // 以“最新持久化数据”为基准合并补丁，避免用本标签页的陈旧缓存覆盖其它标签页的修改
     const base = await loadDataFresh();
     const next = { ...base, ...patch };
+
+    if (remoteAdmin()) {
+      const token = githubToken();
+      await putGithubJson(token, PRIVATE_REPO, 'blog.json', next, 'Save blog data');
+      const published = publishedPayload(next);
+      const serialized = JSON.stringify(published);
+      if (serialized !== lastPublishedJson) {
+        await putGithubJson(token, PUBLIC_REPO, 'published.json', published, 'Publish articles');
+        lastPublishedJson = serialized;
+      }
+      _cache = next;
+      return next;
+    }
 
     if (window.BLOG_API_BASE) {
       let res;
@@ -569,9 +666,15 @@
     delete data._meta;
 
     _cache = mergeDefault(data);
-    let ok = false;
-    try { ok = writeLocal(_cache); } catch (e) { ok = false; }
-    if (!ok) throw new Error('导入失败：浏览器存储空间不足或不可用');
+    if (remoteAdmin()) {
+      const token = githubToken();
+      await putGithubJson(token, PRIVATE_REPO, 'blog.json', _cache, 'Import blog data');
+      await putGithubJson(token, PUBLIC_REPO, 'published.json', publishedPayload(_cache), 'Publish articles');
+    } else {
+      let ok = false;
+      try { ok = writeLocal(_cache); } catch (e) { ok = false; }
+      if (!ok) throw new Error('导入失败：浏览器存储空间不足或不可用');
+    }
 
     // 恢复附件到 IndexedDB
     if (attachments.length && window.BlogUpload && window.BlogUpload.dbPut) {
@@ -666,15 +769,9 @@
   window.addEventListener('storage', (e) => {
     if (e.key === LS_KEY) _cache = null;
   });
-  if (isPublicMirror()) {
-    document.addEventListener('DOMContentLoaded', () => {
-      document.querySelectorAll('a[href="admin.html"]').forEach(a => a.remove());
-    });
-  }
-
   window.BlogStorage = {
     STATUS,
-    loadData, loadDataFresh, loadPublic, saveData, sha256, exportJSON, importJSON, clearCache, isPublicMirror, addMessage,
+    loadData, loadDataFresh, loadPublic, saveData, sha256, exportJSON, importJSON, clearCache, isPublicMirror, githubToken, setGithubToken, addMessage,
     // 文章
     getArticles, getArticleById, upsertArticle, deleteArticle, setArticleStatus,
     incView, toggleLike, hasLiked, addArticleComment, deleteArticleComment, slugify, genId,
