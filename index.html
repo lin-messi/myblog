@@ -4,8 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title id="page-title">我的个人博客</title>
-  <link rel="stylesheet" href="css/main.css" />
-  <link rel="stylesheet" href="css/backgrounds.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('myblog_theme');
+        var theme = saved === 'light' || saved === 'dark' ? saved : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/main.css?v=2" />
+  <link rel="stylesheet" href="css/backgrounds.css?v=2" />
 </head>
 <body>
 
@@ -52,6 +62,7 @@
       <a href="#articles" data-nav="1">文章</a>
       <a href="#projects" data-nav="2">作品</a>
       <a href="#contact" data-nav="3">联系</a>
+      <button id="theme-toggle" class="theme-btn" type="button" title="切换到白天模式" aria-label="切换到白天模式"><span class="theme-icon" aria-hidden="true">☀</span></button>
       <button id="music-toggle" class="music-btn" title="背景音乐">
         <span class="music-icon">♪</span>
       </button>
@@ -164,6 +175,7 @@
   <audio id="bg-music" loop preload="none"></audio>
 
   <!-- 入口脚本（传统脚本，按依赖顺序加载，支持 file:// 双击直接打开） -->
+  <script src="js/theme.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/backgrounds.js"></script>
   <script src="js/particles.js"></script>

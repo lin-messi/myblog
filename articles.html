@@ -4,7 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>全部文章 · MyBlog</title>
-  <link rel="stylesheet" href="css/article.css?v=1" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('myblog_theme');
+        var theme = saved === 'light' || saved === 'dark' ? saved : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/article.css?v=2" />
 </head>
 <body class="list-page">
   <div class="page-bg"></div>
@@ -14,6 +24,7 @@
     <a href="index.html">首页</a>
     <a href="articles.html">全部文章</a>
     <span class="spacer"></span>
+    <button id="theme-toggle" class="theme-btn" type="button" title="切换到白天模式" aria-label="切换到白天模式"><span class="theme-icon" aria-hidden="true">☀</span></button>
     <a href="admin.html">⚙ 后台</a>
   </header>
 
@@ -34,6 +45,7 @@
     </div>
   </div>
 
+  <script src="js/theme.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/markdown.js"></script>
   <script src="js/articles-list.js"></script>

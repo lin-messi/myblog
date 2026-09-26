@@ -189,3 +189,65 @@
   0%, 100% { transform: translateX(-8%) translateY(0) scaleY(1); }
   50% { transform: translateX(8%) translateY(-4%) scaleY(1.15); }
 }
+
+/* ========== 白天：同一场景的浅色版 ========== */
+html[data-theme="light"] .scene-1 {
+  background: radial-gradient(ellipse at top, #d5e7ff 0%, #f7f4ee 58%, #fff 100%);
+}
+html[data-theme="light"] .stars-far,
+html[data-theme="light"] .stars-mid {
+  animation-name: twinkle-day;
+}
+html[data-theme="light"] .stars-near { opacity: .22; }
+@keyframes twinkle-day {
+  0%, 100% { opacity: .08; }
+  50% { opacity: .22; }
+}
+html[data-theme="light"] .nebula {
+  background:
+    radial-gradient(circle at 78% 18%, rgba(255, 214, 120, .55), transparent 18%),
+    radial-gradient(circle at 22% 32%, rgba(255, 182, 210, .35), transparent 40%),
+    radial-gradient(circle at 70% 62%, rgba(150, 190, 255, .32), transparent 44%);
+}
+html[data-theme="light"] .scene-2 {
+  background: linear-gradient(to bottom, #c5e4ff 0%, #7ec8ea 46%, #3cb4c9 100%);
+}
+html[data-theme="light"] .ocean-sky {
+  background:
+    radial-gradient(circle at 74% 16%, rgba(255, 236, 170, .75), transparent 26%),
+    radial-gradient(circle at 30% 10%, rgba(255, 255, 255, .6), transparent 34%);
+}
+html[data-theme="light"] .ocean-wave-far {
+  background: radial-gradient(ellipse at 50% 100%, rgba(255, 255, 255, .55), rgba(255, 255, 255, 0) 70%);
+}
+html[data-theme="light"] .ocean-wave-mid {
+  background: linear-gradient(to top, rgba(90, 186, 214, .9), rgba(90, 186, 214, 0));
+}
+html[data-theme="light"] .ocean-wave-near {
+  background: linear-gradient(to top, rgba(32, 140, 176, .92), rgba(32, 140, 176, 0));
+}
+html[data-theme="light"] .scene-3 {
+  background: linear-gradient(to bottom, #9fd0ff 0%, #d7ecff 36%, #c5e6c8 70%, #8fbf96 100%);
+}
+html[data-theme="light"] .forest-sky {
+  background: radial-gradient(circle at 76% 20%, rgba(255, 236, 160, .8), transparent 20%);
+}
+html[data-theme="light"] .forest-mountain-far {
+  background: linear-gradient(to top, #7ea37a, #c5dcb4);
+}
+html[data-theme="light"] .forest-mountain-mid {
+  background: linear-gradient(to top, #3f6b4a, #6d9468);
+}
+html[data-theme="light"] .forest-trees {
+  background: linear-gradient(to top, #173524, #2f5a3c);
+}
+html[data-theme="light"] .scene-4 {
+  background: linear-gradient(to bottom, #e7f3ff 0%, #d5e8fb 52%, #d7f3ea 100%);
+}
+html[data-theme="light"] .aurora-sky { opacity: .12; }
+html[data-theme="light"] .aurora-1,
+html[data-theme="light"] .aurora-2,
+html[data-theme="light"] .aurora-3 {
+  mix-blend-mode: multiply;
+  opacity: .28;
+}

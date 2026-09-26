@@ -159,3 +159,46 @@ body.article-page, body.list-page {
 .tag-indicator .tag-clear:hover { background: rgba(255,255,255,.16); }
 
 .loading { text-align: center; color: var(--muted); padding: 60px; }
+
+.theme-btn {
+  width: 34px; height: 34px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--line); background: rgba(255,255,255,.08);
+  color: var(--text); cursor: pointer; font-size: 16px; line-height: 1;
+}
+.theme-btn:hover { background: rgba(255,255,255,.16); }
+
+html { color-scheme: dark; }
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --panel: rgba(255,255,255,.82);
+  --line: rgba(20,30,50,.12);
+  --text: #1c2433;
+  --muted: #5c6b82;
+  --accent: #3451c7;
+}
+html[data-theme="light"] .page-bg {
+  background: linear-gradient(125deg, #f7f4ee, #e7f1ff, #f3e9ff, #e8f6f1);
+}
+html[data-theme="light"] .topbar { background: rgba(255,255,255,.82); }
+html[data-theme="light"] .theme-btn { background: #fff; }
+html[data-theme="light"] .article-tags .tag,
+html[data-theme="light"] .comment-item .cn { color: #3451c7; }
+html[data-theme="light"] .comment-item .cc { color: #243044; }
+html[data-theme="light"] .comment-form input,
+html[data-theme="light"] .comment-form textarea,
+html[data-theme="light"] .list-search { background: #fff; }
+html[data-theme="light"] .cat-chips .chip { background: rgba(255,255,255,.8); }
+html[data-theme="light"] .like-btn { background: rgba(255,255,255,.8); }
+html[data-theme="light"] .prev-next a:hover { background: #fff; }
+html[data-theme="light"] .post-card .pc-cover { background: linear-gradient(135deg,#d7e4ff,#e7dcff); color: rgba(28,36,51,.35); }
+html[data-theme="light"] .tag-indicator .tag-clear { background: #fff; }
+html[data-theme="light"] .md-body { color: #1c2433; }
+html[data-theme="light"] .md-body h2,
+html[data-theme="light"] .md-body hr,
+html[data-theme="light"] .md-body th,
+html[data-theme="light"] .md-body td { border-color: rgba(20,30,50,.12); }
+html[data-theme="light"] .md-body a { color: #3451c7; border-bottom-color: rgba(52,81,199,.35); }
+html[data-theme="light"] .md-body blockquote { color: #243044; background: rgba(52,81,199,.08); }
+html[data-theme="light"] .md-body th { background: rgba(20,30,50,.04); }
+html[data-theme="light"] .inline-code { background: rgba(52,81,199,.1); color: #9d174d; }
