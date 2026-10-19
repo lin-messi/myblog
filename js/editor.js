@@ -464,70 +464,78 @@ function demo() {
     else if (status === 'saved') dom.autosave.textContent = '已保存 ✓';
     else if (status === 'error') dom.autosave.textContent = '⚠ ' + (msg || '保存失败');
   }
+  function setSaveBusy(busy) {
+    state.saving = busy;
+    if (busy) {
+      state.saveControls = [...dom.modal.querySelectorAll('input,textarea,select,button')].map(el => [el, el.disabled]);
+      state.saveControls.forEach(([el]) => { el.disabled = true; });
+    } else {
+      (state.saveControls || []).forEach(([el, disabled]) => { el.disabled = disabled; });
+      state.saveControls = null;
+    }
+  }
+  function saveProgress(message) { dom.autosave.textContent = message; }
 
   async function doSave(status) {
+    if (state.saving) return;
     const snap = collect();
     if (!snap.title) { alert('请填写文章标题'); dom.title.focus(); return; }
     if (!snap.excerpt) snap.excerpt = window.MD.plain(snap.body).slice(0, 100);
     snap.status = status;
 
-    // 并发编辑冲突检查：文章已在其它标签页被修改时提醒，避免覆盖对方改动
-    if (state.article) {
-      try {
-        const freshData = await S().loadDataFresh();
-        const fresh = (freshData.articles || []).find(a => a.id === state.article.id);
-        if (fresh && fresh.updatedAt !== state.article.updatedAt) {
-          const go = confirm('该文章已在其它标签页被修改，继续保存将覆盖对方的最新修改。是否仍要保存？');
-          if (!go) return;
-        }
-      } catch (e) { /* 冲突检查失败不阻断保存 */ }
-    }
-
+    setSaveBusy(true);
     setSaveState('saving');
     try {
       // 正式写入前先保存恢复快照，失败后刷新页面也能找回本次修改。
       await S().saveDraft(state.draftKey, snap);
-      const saved = await S().upsertArticle(snap);
+      const saved = await S().upsertArticle(snap, {
+        expectedUpdatedAt: state.article && state.article.updatedAt,
+        onConflict: () => confirm('该文章已在其它标签页被修改，继续保存将覆盖对方的最新修改。是否仍要保存？'),
+        draftKey: state.draftKey, clearRevision: !!state.article, onProgress: saveProgress,
+      });
+      if (!saved) { setSaveState('error', '已取消保存，当前内容仍保留'); return; }
       clearTimeout(state.autosaveTimer);
       state.dirty = false;
       // 确认文章保存成功后再清理草稿；草稿/修订清理失败不影响“已保存”结果
       try {
-        await S().clearDraft(state.draftKey);
-        if (state.article) await S().clearRevision(state.article.id);
+        await S().clearDraft(state.draftKey, { localOnly: true });
       } catch (e) {
         console.warn('[editor] 清理草稿/修订失败（文章已保存）', e);
       }
       setSaveState('saved');
       const msg = status === STATUS.PUBLISHED ? '文章已发布！' : status === STATUS.DRAFT ? '草稿已保存' : '文章已下架';
       const done = state.onDone;
+      setSaveBusy(false);
       close(true);
       if (done) done(saved, msg);
     } catch (err) {
       setSaveState('error', err.message);
       alert((err.saved ? '公开同步未完成：' : '保存失败：') + err.message);
-    }
+    } finally { setSaveBusy(false); }
   }
 
   // 已发布文章：把修改存为“修订草稿”，线上版本保持不变
   async function doSaveRevision() {
+    if (state.saving) return;
     const snap = collect();
     if (!snap.title) { alert('请填写文章标题'); dom.title.focus(); return; }
     if (!snap.excerpt) snap.excerpt = window.MD.plain(snap.body).slice(0, 100);
-    setSaveState('saving');
+    setSaveBusy(true); setSaveState('saving');
     try {
       await S().saveDraft(state.draftKey, snap);
-      await S().saveRevision(state.article.id, snap);
-      try { await S().clearDraft(state.draftKey); } catch (e) { /* 保留恢复副本 */ }
+      await S().saveRevision(state.article.id, snap, { draftKey: state.draftKey, onProgress: saveProgress });
+      try { await S().clearDraft(state.draftKey, { localOnly: true }); } catch (e) { /* 保留恢复副本 */ }
       clearTimeout(state.autosaveTimer);
       state.dirty = false;
       setSaveState('saved');
       const done = state.onDone;
+      setSaveBusy(false);
       close(true);
       if (done) done(null, '修订已暂存，线上版本保持不变');
     } catch (err) {
       setSaveState('error', err.message);
       alert('修订保存失败：' + err.message);
-    }
+    } finally { setSaveBusy(false); }
   }
 
   // 根据文章状态调整状态下拉与“仅存草稿/存修订”按钮
@@ -637,6 +645,7 @@ function demo() {
   }
 
   function close(saved) {
+    if (state && state.saving && !saved) return;
     if (state) {
       if (!saved && state.dirty) flushDraft();
       clearTimeout(state.autosaveTimer);

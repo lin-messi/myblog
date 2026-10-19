@@ -266,7 +266,8 @@
           btn.addEventListener('click', async () => {
             const act = btn.dataset.act;
             try {
-              const art = await window.BlogStorage.getArticleById(id);
+              const art = (act === 'edit' || act === 'pin')
+                ? await window.BlogStorage.getArticleById(id) : list.find(a => a.id === id);
               if (act === 'edit') {
                 window.BlogEditor.open(art, async (saved, msg) => { await renderArticleList(); showToast(msg || '已保存'); });
               } else if (act === 'publish') {

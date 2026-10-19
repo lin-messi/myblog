@@ -203,6 +203,9 @@
   const GITHUB_RAW_JSON = 'application/vnd.github.raw+json';
   const GITHUB_FILE_LIMIT = 100000000;
   const GITHUB_TIMEOUT_MS = 30000;
+  const PUBLIC_SYNC_PENDING_KEY = 'myblog_public_sync_pending';
+  const githubFiles = new Map();
+  let publicSyncPending = false;
   function isPublicMirror() {
     return /(^|\.)github\.io$/.test(location.hostname);
   }
@@ -210,6 +213,7 @@
     try { return localStorage.getItem(GITHUB_TOKEN_KEY) || ''; } catch (e) { return ''; }
   }
   function setGithubToken(token) {
+    if (token !== githubToken()) { _cache = null; githubFiles.clear(); }
     if (token) localStorage.setItem(GITHUB_TOKEN_KEY, token);
     else localStorage.removeItem(GITHUB_TOKEN_KEY);
   }
@@ -230,12 +234,37 @@
     error.retryable = retryable;
     return error;
   }
+  async function gitBlobSha(value) {
+    const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : value;
+    const header = new TextEncoder().encode('blob ' + bytes.length + '\0');
+    const object = new Uint8Array(header.length + bytes.length);
+    object.set(header); object.set(bytes, header.length);
+    const digest = await crypto.subtle.digest('SHA-1', object);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  function githubFile(token, repo, file) {
+    const entry = githubFiles.get(repo + '/' + file);
+    return entry && entry.token === token ? entry : null;
+  }
+  function pendingPublicSync() {
+    try { return publicSyncPending || localStorage.getItem(PUBLIC_SYNC_PENDING_KEY) === '1'; }
+    catch (error) { return publicSyncPending; }
+  }
+  function markPublicSync(pending) {
+    publicSyncPending = pending;
+    try {
+      if (pending) localStorage.setItem(PUBLIC_SYNC_PENDING_KEY, '1');
+      else localStorage.removeItem(PUBLIC_SYNC_PENDING_KEY);
+    } catch (error) { /* 同一窗口仍用内存标记保留待同步状态。 */ }
+  }
   async function githubContents(token, repo, file, method, body, accept) {
     const verb = method || 'GET';
+    const rawGet = verb === 'GET' && accept === GITHUB_RAW_JSON;
     for (let attempt = 0; attempt < (verb === 'GET' ? 2 : 1); attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS);
       try {
+        const cached = githubFile(token, repo, file);
         const res = await fetch('https://api.github.com/repos/' + repo + '/contents/' + file, {
           method: verb,
           cache: 'no-store',
@@ -244,9 +273,11 @@
             ...(token ? { Authorization: 'Bearer ' + token } : {}),
             Accept: accept || 'application/vnd.github+json',
             'Content-Type': 'application/json',
+            ...(rawGet && cached && cached.etag && cached.text != null ? { 'If-None-Match': cached.etag } : {}),
           },
           body: body ? JSON.stringify(body) : undefined,
         });
+        if (res.status === 304 && rawGet && cached && cached.text != null) return JSON.parse(cached.text);
         if (res.status === 404 && verb === 'GET') return null;
         if (!res.ok) {
           const info = await res.json().catch(() => ({}));
@@ -261,7 +292,27 @@
           if (res.status === 409) throw cloudError('云端数据已发生变化，本次未覆盖，请刷新核对后重试', 'GITHUB_CONFLICT');
           throw cloudError('GitHub 服务暂时无法完成请求（' + res.status + '），请稍后重试', 'GITHUB_UNAVAILABLE', res.status >= 500);
         }
-        try { return await res.json(); }
+        try {
+          if (rawGet) {
+            const bytes = new Uint8Array(await res.arrayBuffer());
+            let text;
+            try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+            catch (error) { throw cloudError('云端文件不是有效 UTF-8 文本，请检查数据文件', 'GITHUB_INVALID_JSON'); }
+            const data = JSON.parse(text);
+            const sha = await gitBlobSha(bytes);
+            const etag = res.headers.get('etag');
+            // 只在此端点实测 ETag 与 blob SHA 对应时，沿用写入响应的新版本号。
+            const blobEtag = etag === '"' + sha + '"' || etag === 'W/"' + sha + '"';
+            githubFiles.set(repo + '/' + file, { token, text, sha, etag, blobEtag });
+            return data;
+          }
+          const data = await res.json();
+          if (verb === 'GET' && data && data.sha) {
+            const previous = githubFile(token, repo, file);
+            githubFiles.set(repo + '/' + file, previous && previous.sha === data.sha ? previous : { token, sha: data.sha });
+          }
+          return data;
+        }
         catch (error) {
           if (error.name === 'SyntaxError') throw cloudError('云端返回的文件不是有效 JSON，已停止读取和保存，请检查数据文件', 'GITHUB_INVALID_JSON');
           throw error;
@@ -307,12 +358,24 @@
     }
   }
   async function putGithubJson(token, repo, file, serialized, message) {
-    const meta = await githubContents(token, repo, file);
+    let meta = githubFile(token, repo, file);
+    if (!meta || !meta.sha) meta = await githubContents(token, repo, file);
     const body = { message, content: utf8ToBase64(serialized), branch: 'main' };
     if (meta && meta.sha) body.sha = meta.sha;
-    const saved = await githubContents(token, repo, file, 'PUT', body);
-    if (!saved || !saved.content || !saved.content.sha) {
-      throw cloudError('GitHub 未返回保存确认，请先核对云端内容后重试', 'GITHUB_WRITE_UNCONFIRMED');
+    try {
+      const saved = await githubContents(token, repo, file, 'PUT', body);
+      if (!saved || !saved.content || !saved.content.sha) {
+        throw cloudError('GitHub 未返回保存确认，请先核对云端内容后重试', 'GITHUB_WRITE_UNCONFIRMED');
+      }
+      const previous = githubFile(token, repo, file);
+      const sha = saved.content.sha;
+      const etag = previous && previous.blobEtag ? (previous.etag.startsWith('W/') ? 'W/' : '') + '"' + sha + '"' : null;
+      githubFiles.set(repo + '/' + file, { token, sha, text: serialized, etag, blobEtag: !!(previous && previous.blobEtag) });
+      return saved;
+    } catch (error) {
+      // 失败可能是版本冲突或响应丢失；下次读取必须重新核对服务端版本。
+      githubFiles.delete(repo + '/' + file);
+      throw error;
     }
   }
   function shapePublic(data) {
@@ -388,7 +451,6 @@
     return _cache;
   }
 
-  let lastPublishedJson = '';
   let remoteChain = Promise.resolve();
   function enqueueRemoteSave(task) {
     const run = remoteChain.then(task, task);
@@ -396,34 +458,41 @@
     return run;
   }
 
-  async function saveData(patch) {
-    if (remoteAdmin()) return enqueueRemoteSave(() => persistPatch(patch));
-    return persistPatch(patch);
+  async function saveData(patch, options = {}) {
+    if (remoteAdmin()) return enqueueRemoteSave(() => persistPatch(patch, options));
+    return persistPatch(patch, options);
   }
 
-  async function persistPatch(patch) {
+  async function persistPatch(patch, options) {
     // 以“最新持久化数据”为基准合并补丁，避免用本标签页的陈旧缓存覆盖其它标签页的修改
+    if (options.onProgress) options.onProgress(remoteAdmin() ? '正在核对云端版本…' : '正在保存…');
     const base = await loadDataFresh();
-    const next = { ...base, ...patch };
+    const update = typeof patch === 'function' ? await patch(base) : patch;
+    if (!update) return base;
+    const next = { ...base, ...update };
 
     if (remoteAdmin()) {
       const token = githubToken();
       const published = publishedPayload(next);
       const serialized = JSON.stringify(published);
       const privateJson = JSON.stringify(next);
+      const publish = options.forcePublish || pendingPublicSync() || serialized !== JSON.stringify(publishedPayload(base));
       // 两份文件都先校验，避免私有数据写入后才发现公开文件超过容量。
       checkGithubSize(privateJson);
       checkGithubSize(serialized);
+      if (publish) markPublicSync(true);
+      if (options.onProgress) options.onProgress('正在保存到云端…');
       await putGithubJson(token, PRIVATE_REPO, 'blog.json', privateJson, 'Save blog data');
       _cache = next;
-      if (serialized !== lastPublishedJson) {
+      if (publish) {
+        if (options.onProgress) options.onProgress('文章已保存，正在更新公开网站…');
         try { await putGithubJson(token, PUBLIC_REPO, 'published.json', serialized, 'Publish articles'); }
         catch (cause) {
           const error = cloudError('文章已保存到云端，但公开网站同步未完成：' + cause.message + '。请重试保存以继续同步', 'GITHUB_PUBLIC_SYNC');
           error.saved = true;
           throw error;
         }
-        lastPublishedJson = serialized;
+        markPublicSync(false);
       }
       return next;
     }
@@ -489,63 +558,65 @@
   }
 
   // 新建或更新文章；传入对象含 id 则更新，否则新建
-  async function upsertArticle(article) {
-    const data = await loadDataFresh();
-    const list = data.articles.slice();
-    const now = new Date().toISOString();
-    let item;
-    if (article.id) {
-      const idx = list.findIndex(a => a.id === article.id);
+  function editorCleanup(data, draftKey, articleId, clearRevision) {
+    const patch = {};
+    if (draftKey && data.drafts && Object.prototype.hasOwnProperty.call(data.drafts, draftKey)) {
+      patch.drafts = { ...data.drafts }; delete patch.drafts[draftKey];
+    }
+    if (clearRevision && data.revisions && Object.prototype.hasOwnProperty.call(data.revisions, articleId)) {
+      patch.revisions = { ...data.revisions }; delete patch.revisions[articleId];
+    }
+    return patch;
+  }
+  async function upsertArticle(article, options = {}) {
+    let item = null;
+    await saveData(async data => {
+      const list = data.articles.slice();
+      const now = new Date().toISOString();
+      const idx = article.id ? list.findIndex(a => a.id === article.id) : -1;
       if (idx >= 0) {
-        item = normalizeArticle({ ...list[idx], ...article, updatedAt: now });
-        list[idx] = item;
+        const current = list[idx];
+        if (options.expectedUpdatedAt && current.updatedAt !== options.expectedUpdatedAt && options.onConflict) {
+          if (!await options.onConflict(current)) return null;
+        }
+        item = normalizeArticle({ ...current, ...article, updatedAt: now }); list[idx] = item;
       } else {
         item = normalizeArticle({
           ...article,
+          id: article.id || genId(),
           slug: article.slug || slugify(article.title),
           publishedAt: article.status === STATUS.PUBLISHED ? now : (article.publishedAt || now),
           updatedAt: now,
         });
         list.push(item);
       }
-    } else {
-      const id = genId();
-      item = normalizeArticle({
-        ...article,
-        id,
-        slug: article.slug || slugify(article.title),
-        publishedAt: article.status === STATUS.PUBLISHED ? now : (article.publishedAt || now),
-        updatedAt: now,
-      });
-      list.push(item);
-    }
-    await saveData({ articles: list });
+      return { articles: list, ...editorCleanup(data, options.draftKey, item.id, options.clearRevision) };
+    }, { forcePublish: options.forcePublish || article.status === STATUS.PUBLISHED, onProgress: options.onProgress });
     return item;
   }
 
   async function deleteArticle(id) {
-    const data = await loadDataFresh();
-    const list = data.articles.filter(a => a.id !== id);
-    await saveData({ articles: list });
+    let list;
+    await saveData(data => { list = data.articles.filter(a => a.id !== id); return { articles: list }; });
     return list;
   }
 
   // 修改文章状态（草稿 / 发布 / 下架）
   async function setArticleStatus(id, status) {
-    const data = await loadDataFresh();
-    const list = data.articles.slice();
-    const idx = list.findIndex(a => a.id === id);
-    if (idx < 0) return null;
-    const now = new Date().toISOString();
-    const wasPublished = list[idx].status === STATUS.PUBLISHED;
-    list[idx] = {
-      ...list[idx],
-      status,
-      updatedAt: now,
-      publishedAt: (status === STATUS.PUBLISHED && !wasPublished) ? now : list[idx].publishedAt,
-    };
-    await saveData({ articles: list });
-    return list[idx];
+    let item = null;
+    await saveData(data => {
+      const list = data.articles.slice();
+      const idx = list.findIndex(a => a.id === id);
+      if (idx < 0) return null;
+      const now = new Date().toISOString();
+      const wasPublished = list[idx].status === STATUS.PUBLISHED;
+      item = list[idx] = {
+        ...list[idx], status, updatedAt: now,
+        publishedAt: (status === STATUS.PUBLISHED && !wasPublished) ? now : list[idx].publishedAt,
+      };
+      return { articles: list };
+    }, { forcePublish: status !== STATUS.DRAFT });
+    return item;
   }
 
   // 点赞 + 阅读计数（本地）
@@ -686,37 +757,38 @@
   async function getDraft(key) {
     const local = readRecoveryDrafts()[key];
     if (local) return local;
-    const data = await loadDataFresh();
+    const data = await loadData();
     return (data.drafts || {})[key] || null;
   }
-  async function clearDraft(key) {
+  async function clearDraft(key, options = {}) {
     const recovery = readRecoveryDrafts();
     delete recovery[key];
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(recovery));
-    const data = await loadDataFresh();
-    if (!data.drafts || !data.drafts[key]) return;
-    const drafts = { ...(data.drafts || {}) };
-    delete drafts[key];
-    await saveData({ drafts });
+    if (options.localOnly) return;
+    await saveData(data => {
+      if (!data.drafts || !data.drafts[key]) return null;
+      const drafts = { ...data.drafts }; delete drafts[key]; return { drafts };
+    });
   }
 
   // ============ 修订草稿（已发布文章的暂存修改，不影响线上版本） ============
-  async function saveRevision(articleId, revision) {
-    const data = await loadDataFresh();
-    const revisions = { ...(data.revisions || {}) };
-    revisions[articleId] = { ...revision, updatedAt: new Date().toISOString() };
-    await saveData({ revisions });
-    return revisions[articleId];
+  async function saveRevision(articleId, revision, options = {}) {
+    let saved;
+    await saveData(data => {
+      saved = { ...revision, updatedAt: new Date().toISOString() };
+      return { revisions: { ...(data.revisions || {}), [articleId]: saved }, ...editorCleanup(data, options.draftKey) };
+    }, { onProgress: options.onProgress });
+    return saved;
   }
   async function getRevision(articleId) {
     const data = await loadData();
     return (data.revisions || {})[articleId] || null;
   }
   async function clearRevision(articleId) {
-    const data = await loadDataFresh();
-    const revisions = { ...(data.revisions || {}) };
-    delete revisions[articleId];
-    await saveData({ revisions });
+    await saveData(data => {
+      if (!data.revisions || !Object.prototype.hasOwnProperty.call(data.revisions, articleId)) return null;
+      const revisions = { ...data.revisions }; delete revisions[articleId]; return { revisions };
+    });
   }
 
   // ============ 系列 / 专栏 ============
@@ -848,15 +920,14 @@
     delete data._attachments;
     delete data._meta;
 
-    _cache = mergeDefault(data);
+    const restored = mergeDefault(data);
     if (remoteAdmin()) {
-      const token = githubToken();
-      await putGithubJson(token, PRIVATE_REPO, 'blog.json', _cache, 'Import blog data');
-      await putGithubJson(token, PUBLIC_REPO, 'published.json', publishedPayload(_cache), 'Publish articles');
+      await saveData(base => ({ ...restored, adminPasswordHash: restored.adminPasswordHash || base.adminPasswordHash }), { forcePublish: true });
     } else {
       let ok = false;
-      try { ok = writeLocal(_cache); } catch (e) { ok = false; }
+      try { ok = writeLocal(restored); } catch (e) { ok = false; }
       if (!ok) throw new Error('导入失败：浏览器存储空间不足或不可用');
+      _cache = restored;
     }
 
     // 恢复附件到 IndexedDB
@@ -948,35 +1019,34 @@
 
   // 批量导入多篇文章：单次持久化，避免逐篇触发整库写入/公开发布
   async function importArticles(articles) {
-    const data = await loadDataFresh();
-    const list = data.articles.slice();
-    const byId = new Map(list.map(a => [a.id, a]));
-    const now = new Date().toISOString();
     const added = [];
-    const returned = new Set();
-    for (const a of (articles || [])) {
-      const item = normalizeArticle({
-        ...a,
-        id: a.id || genId(),
-        slug: a.slug || slugify(a.title),
-        publishedAt: a.status === STATUS.PUBLISHED ? now : (a.publishedAt || now),
-        updatedAt: now,
-      });
-      const existing = byId.get(item.id);
-      if (existing) {
-        // 私有数据写入成功、公开同步失败等情况，重试使用同一标识。
-        // 保留已提交版本和阅读统计，绝不重复追加或覆盖后来修改的文章。
-        const fields = ['title','slug','category','tags','cover','excerpt','body','status','seriesId','seriesGroupId','seriesOrder'];
-        if (fields.some(key => JSON.stringify(existing[key]) !== JSON.stringify(item[key]))) {
-          throw new Error('部分文章已保存且内容发生变化，请先在文章管理中核对后重新选择文件');
+    await saveData(data => {
+      const list = data.articles.slice();
+      const byId = new Map(list.map(a => [a.id, a]));
+      const now = new Date().toISOString();
+      const returned = new Set();
+      for (const a of (articles || [])) {
+        const item = normalizeArticle({
+          ...a,
+          id: a.id || genId(),
+          slug: a.slug || slugify(a.title),
+          publishedAt: a.status === STATUS.PUBLISHED ? now : (a.publishedAt || now),
+          updatedAt: now,
+        });
+        const existing = byId.get(item.id);
+        if (existing) {
+          // 私有数据已保存、公开同步失败时，用同一标识重试，保留后来修改和阅读统计。
+          const fields = ['title','slug','category','tags','cover','excerpt','body','status','seriesId','seriesGroupId','seriesOrder'];
+          if (fields.some(key => JSON.stringify(existing[key]) !== JSON.stringify(item[key]))) {
+            throw new Error('部分文章已保存且内容发生变化，请先在文章管理中核对后重新选择文件');
+          }
+        } else {
+          list.push(item); byId.set(item.id, item);
         }
-      } else {
-        list.push(item);
-        byId.set(item.id, item);
+        if (!returned.has(item.id)) { added.push(existing || item); returned.add(item.id); }
       }
-      if (!returned.has(item.id)) { added.push(existing || item); returned.add(item.id); }
-    }
-    await saveData({ articles: list });
+      return { articles: list };
+    }, { forcePublish: (articles || []).some(article => (article.status || STATUS.PUBLISHED) === STATUS.PUBLISHED) });
     return added;
   }
 
