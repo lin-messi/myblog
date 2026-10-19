@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>后台管理 · MyBlog</title>
-  <link rel="stylesheet" href="css/admin.css?v=4c196054157f13c6" />
-  <link rel="stylesheet" href="css/editor.css?v=4c196054157f13c6" />
+  <link rel="stylesheet" href="css/admin.css?v=81adc4a21664f014" />
+  <link rel="stylesheet" href="css/editor.css?v=81adc4a21664f014" />
 </head>
 <body>
 
@@ -105,8 +105,8 @@
           </select>
           <button class="btn-primary" id="add-article">＋ 写文章</button>
           <label class="btn-ghost" style="cursor:pointer;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.16);">
-            导入 .md
-            <input type="file" id="import-md" accept=".md,.markdown,text/markdown" hidden />
+            批量导入 Markdown
+            <input type="file" id="import-md" accept=".md,.markdown,text/markdown" multiple hidden />
           </label>
         </div>
         <div id="art-list" class="art-list"></div>
@@ -195,12 +195,13 @@
     </form>
   </dialog>
 
-  <script src="js/storage.js?v=4c196054157f13c6"></script>
-  <script src="js/markdown.js?v=4c196054157f13c6"></script>
-  <script src="js/editor.js?v=4c196054157f13c6"></script>
-  <script src="js/upload.js?v=4c196054157f13c6"></script>
-  <script src="js/zip.js?v=4c196054157f13c6"></script>
-  <script src="js/site-export.js?v=4c196054157f13c6"></script>
-  <script src="js/admin.js?v=4c196054157f13c6"></script>
+  <script src="js/storage.js?v=81adc4a21664f014"></script>
+  <script src="js/markdown.js?v=81adc4a21664f014"></script>
+  <script src="js/editor.js?v=81adc4a21664f014"></script>
+  <script src="js/upload.js?v=81adc4a21664f014"></script>
+  <script src="js/zip.js?v=81adc4a21664f014"></script>
+  <script src="js/site-export.js?v=81adc4a21664f014"></script>
+  <script src="js/batch-import.js?v=81adc4a21664f014"></script>
+  <script src="js/admin.js?v=81adc4a21664f014"></script>
 </body>
 </html>

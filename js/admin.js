@@ -179,17 +179,13 @@
       });
     });
 
-    document.getElementById('import-md').addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      try {
-        const art = await window.BlogStorage.importArticleMarkdown(file);
-        await renderArticleList();
-        showToast('已从 Markdown 导入为草稿');
-        window.BlogEditor.open(art, async () => { await renderArticleList(); });
-      } catch (err) {
-        showToast('导入失败: ' + err.message, true);
-      }
+    document.getElementById('import-md').addEventListener('change', (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      window.BlogBatchImport.open(files, async (added, result) => {
+        await refreshSeriesAndArticles();
+        showToast(`已导入 ${added ? added.length : 0} 篇文章${result ? `，跳过 ${result.skipped} 篇，失败 ${result.failed} 篇` : ''}`);
+      }).catch(error => showToast('无法打开导入预览：' + error.message, true));
       e.target.value = '';
     });
 

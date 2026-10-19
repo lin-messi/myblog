@@ -878,6 +878,40 @@
     });
   }
 
+  // 批量导入多篇文章：单次持久化，避免逐篇触发整库写入/公开发布
+  async function importArticles(articles) {
+    const data = await loadDataFresh();
+    const list = data.articles.slice();
+    const byId = new Map(list.map(a => [a.id, a]));
+    const now = new Date().toISOString();
+    const added = [];
+    const returned = new Set();
+    for (const a of (articles || [])) {
+      const item = normalizeArticle({
+        ...a,
+        id: a.id || genId(),
+        slug: a.slug || slugify(a.title),
+        publishedAt: a.status === STATUS.PUBLISHED ? now : (a.publishedAt || now),
+        updatedAt: now,
+      });
+      const existing = byId.get(item.id);
+      if (existing) {
+        // 私有数据写入成功、公开同步失败等情况，重试使用同一标识。
+        // 保留已提交版本和阅读统计，绝不重复追加或覆盖后来修改的文章。
+        const fields = ['title','slug','category','tags','cover','excerpt','body','status','seriesId','seriesGroupId','seriesOrder'];
+        if (fields.some(key => JSON.stringify(existing[key]) !== JSON.stringify(item[key]))) {
+          throw new Error('部分文章已保存且内容发生变化，请先在文章管理中核对后重新选择文件');
+        }
+      } else {
+        list.push(item);
+        byId.set(item.id, item);
+      }
+      if (!returned.has(item.id)) { added.push(existing || item); returned.add(item.id); }
+    }
+    await saveData({ articles: list });
+    return added;
+  }
+
   function clearCache() { _cache = null; }
 
   // 跨标签页同步：其它标签页写入后，让本页缓存失效，下次读写基于最新数据
@@ -898,6 +932,6 @@
     getSeriesList, getSeriesById, upsertSeries, deleteSeries, deleteSeriesGroup,
     compareSeriesArticles, sortSeriesArticles, normalizeOrder, genSeriesId, genGroupId,
     // markdown 导入导出
-    exportArticleMarkdown, importArticleMarkdown, articleToMarkdown,
+    exportArticleMarkdown, importArticleMarkdown, articleToMarkdown, parseMarkdownFile, importArticles,
   };
 })();
