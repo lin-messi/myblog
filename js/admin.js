@@ -30,6 +30,15 @@
   function setLoggedIn() {
     sessionStorage.setItem(SESSION_KEY, JSON.stringify({ expire: Date.now() + SESSION_TTL }));
   }
+  function forgetGithubToken() {
+    window.BlogStorage.setGithubToken('');
+    document.getElementById('github-token-saved').hidden = true;
+    const input = document.getElementById('login-token');
+    input.value = '';
+    input.hidden = false;
+    input.previousElementSibling.hidden = false;
+    input.focus();
+  }
 
   function bindLogin() {
     const btn = document.getElementById('login-btn');
@@ -48,7 +57,10 @@
           window.BlogStorage.clearCache();
           let data;
           try { data = await window.BlogStorage.loadDataFresh(); }
-          catch (e) { window.BlogStorage.setGithubToken(''); throw e; }
+          catch (e) {
+            if (e.code === 'GITHUB_AUTH') forgetGithubToken();
+            throw e;
+          }
           const h = await window.BlogStorage.sha256(pw);
           if (h !== data.adminPasswordHash) { errEl.textContent = '密码错误'; input.value = ''; input.focus(); return; }
           setLoggedIn();
@@ -699,16 +711,18 @@
         tokenInput.hidden = true;
         tokenInput.previousElementSibling.hidden = true;
       }
-      document.getElementById('github-token-reset').addEventListener('click', () => {
-        window.BlogStorage.setGithubToken('');
-        saved.hidden = true;
-        tokenInput.hidden = false;
-        tokenInput.previousElementSibling.hidden = false;
-        tokenInput.focus();
-      });
+      document.getElementById('github-token-reset').addEventListener('click', forgetGithubToken);
     }
     if (isLoggedIn()) {
-      await showAdminView();
+      try { await showAdminView(); }
+      catch (error) {
+        sessionStorage.removeItem(SESSION_KEY);
+        document.getElementById('login-view').hidden = false;
+        document.getElementById('admin-view').hidden = true;
+        if (error.code === 'GITHUB_AUTH') forgetGithubToken();
+        document.getElementById('login-error').textContent = '读取后台数据失败：' + error.message;
+        bindLogin();
+      }
     } else {
       bindLogin();
     }

@@ -269,7 +269,7 @@
         catch (e) { console.warn('[batch-import] 文章已导入，刷新列表失败', e); }
       }
     } catch (err) {
-      statusEl.textContent = '导入失败：' + err.message + '（可修正后重试，已确认成功的文章不会重复创建）';
+      statusEl.textContent = (err.saved ? '公开同步未完成：' : '导入失败：') + err.message + '（保留此窗口重试，已确认成功的文章不会重复创建）';
       setBusy(false);
       updateSummary();
     }

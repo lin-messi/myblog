@@ -200,6 +200,9 @@
   const GITHUB_TOKEN_KEY = 'myblog_github_token';
   const PRIVATE_REPO = 'lin-messi/myblog-data';
   const PUBLIC_REPO = 'lin-messi/myblog';
+  const GITHUB_RAW_JSON = 'application/vnd.github.raw+json';
+  const GITHUB_FILE_LIMIT = 100000000;
+  const GITHUB_TIMEOUT_MS = 30000;
   function isPublicMirror() {
     return /(^|\.)github\.io$/.test(location.hostname);
   }
@@ -215,47 +218,75 @@
   }
   function utf8ToBase64(text) {
     const bytes = new TextEncoder().encode(text);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      chunks.push(String.fromCharCode(...bytes.subarray(i, i + 0x8000)));
+    }
+    return btoa(chunks.join(''));
   }
-  function base64ToUtf8(text) {
-    const binary = atob(String(text).replace(/\n/g, ''));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder().decode(bytes);
+  function cloudError(message, code, retryable = false) {
+    const error = new Error(message);
+    error.code = code;
+    error.retryable = retryable;
+    return error;
   }
   async function githubContents(token, repo, file, method, body, accept) {
-    const res = await fetch('https://api.github.com/repos/' + repo + '/contents/' + file, {
-      method: method || 'GET',
-      cache: 'no-store',
-      headers: {
-        Authorization: 'Bearer ' + token,
-        Accept: accept || 'application/vnd.github+json',
-        'Content-Type': 'application/json',
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (res.status === 404) return null;
-    if (res.status === 401 || res.status === 403) throw new Error('GitHub 令牌无效、过期，或没有仓库权限');
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'GitHub 返回 ' + res.status);
+    const verb = method || 'GET';
+    for (let attempt = 0; attempt < (verb === 'GET' ? 2 : 1); attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS);
+      try {
+        const res = await fetch('https://api.github.com/repos/' + repo + '/contents/' + file, {
+          method: verb,
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            ...(token ? { Authorization: 'Bearer ' + token } : {}),
+            Accept: accept || 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (res.status === 404 && verb === 'GET') return null;
+        if (!res.ok) {
+          const info = await res.json().catch(() => ({}));
+          if (res.status === 429 || (res.status === 403 && (res.headers.get('retry-after') || res.headers.get('x-ratelimit-remaining') === '0' || /rate limit/i.test(info.message || '')))) {
+            throw cloudError('GitHub 请求次数暂时受限，请稍后重试；登录令牌仍会保留', 'GITHUB_RATE_LIMIT');
+          }
+          if (res.status === 401) throw cloudError('GitHub 令牌无效或已过期，请重新授权', 'GITHUB_AUTH');
+          if (res.status === 413 || /too large|exceeds.*size|larger than.*MB|up to 100 MB/i.test(info.message || '')) {
+            throw cloudError('云端数据文件超过 GitHub 容量限制，请先拆分数据或迁移存储', 'GITHUB_SIZE');
+          }
+          if (res.status === 403 || res.status === 404) throw cloudError('无法访问或写入 GitHub 仓库，请检查令牌权限和仓库是否存在', 'GITHUB_PERMISSION');
+          if (res.status === 409) throw cloudError('云端数据已发生变化，本次未覆盖，请刷新核对后重试', 'GITHUB_CONFLICT');
+          throw cloudError('GitHub 服务暂时无法完成请求（' + res.status + '），请稍后重试', 'GITHUB_UNAVAILABLE', res.status >= 500);
+        }
+        try { return await res.json(); }
+        catch (error) {
+          if (error.name === 'SyntaxError') throw cloudError('云端返回的文件不是有效 JSON，已停止读取和保存，请检查数据文件', 'GITHUB_INVALID_JSON');
+          throw error;
+        }
+      } catch (cause) {
+        const error = typeof cause.code === 'string' && cause.code.startsWith('GITHUB_') ? cause : cloudError(
+          controller.signal.aborted ? '连接 GitHub 超时，请检查网络后重试' : '无法连接 GitHub，请检查网络后重试',
+          controller.signal.aborted ? 'GITHUB_TIMEOUT' : 'GITHUB_NETWORK', true);
+        if (verb !== 'GET' || attempt > 0 || !error.retryable) throw error;
+      } finally { clearTimeout(timer); }
+      await new Promise(resolve => setTimeout(resolve, 250));
     }
-    return res.json();
   }
-  async function readPrivateBlog() {
-    const token = githubToken();
-    const meta = await githubContents(token, PRIVATE_REPO, 'blog.json');
-    if (!meta) throw new Error('未找到云端博客数据文件，请检查仓库和令牌权限');
-    if (meta.content) return JSON.parse(base64ToUtf8(meta.content));
-    // GitHub 对超过 1 MB 的文件返回 encoding:none 和空 content，文件仍然存在。
-    // 在同一个受认证的 API 地址读取原始 JSON，不使用公开或临时下载链接。
-    const data = await githubContents(token, PRIVATE_REPO, 'blog.json', 'GET', undefined, 'application/vnd.github.raw+json');
-    if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.articles)) {
-      throw new Error('云端数据文件存在，但内容无法识别，请检查文件格式');
+  function validateCloudData(data, isPrivate) {
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.articles) ||
+        (isPrivate && (typeof data.adminPasswordHash !== 'string' || !data.adminPasswordHash))) {
+      throw cloudError('云端数据文件格式不正确，已停止读取和保存，请检查备份', 'GITHUB_INVALID_DATA');
     }
     return data;
+  }
+  async function readPrivateBlog() {
+    // 大小文件统一读取原始 JSON，不再依赖超过 1 MB 就消失的 content 字段。
+    const data = await githubContents(githubToken(), PRIVATE_REPO, 'blog.json', 'GET', undefined, GITHUB_RAW_JSON);
+    if (data === null) throw cloudError('未找到云端博客数据文件，请检查仓库和令牌权限', 'GITHUB_MISSING');
+    return validateCloudData(data, true);
   }
   function publishedPayload(data) {
     const view = shapePublic(data);
@@ -270,11 +301,19 @@
     view.messages = (view.messages || []).map(m => ({ id: m.id, name: String(m.name || ''), content: String(m.content || ''), time: m.time || '' }));
     return view;
   }
-  async function putGithubJson(token, repo, file, value, message) {
+  function checkGithubSize(serialized) {
+    if (new Blob([serialized]).size > GITHUB_FILE_LIMIT) {
+      throw cloudError('云端单个数据文件超过 100 MB，已停止保存，请先拆分数据或迁移存储', 'GITHUB_SIZE');
+    }
+  }
+  async function putGithubJson(token, repo, file, serialized, message) {
     const meta = await githubContents(token, repo, file);
-    const body = { message, content: utf8ToBase64(JSON.stringify(value)), branch: 'main' };
+    const body = { message, content: utf8ToBase64(serialized), branch: 'main' };
     if (meta && meta.sha) body.sha = meta.sha;
-    await githubContents(token, repo, file, 'PUT', body);
+    const saved = await githubContents(token, repo, file, 'PUT', body);
+    if (!saved || !saved.content || !saved.content.sha) {
+      throw cloudError('GitHub 未返回保存确认，请先核对云端内容后重试', 'GITHUB_WRITE_UNCONFIRMED');
+    }
   }
   function shapePublic(data) {
     const site = data.site || {};
@@ -305,12 +344,19 @@
       return shapePublic(await res.json());
     }
     if (isPublicMirror()) {
-      let res = await fetch('https://api.github.com/repos/lin-messi/myblog/contents/published.json', {
-        headers: { Accept: 'application/vnd.github.raw' }, cache: 'no-store',
-      });
-      if (!res.ok) res = await fetch('published.json?t=' + Date.now(), { cache: 'no-store' });
-      if (!res.ok) throw new Error('无法读取网站内容');
-      return shapePublic(await res.json());
+      try {
+        const data = await githubContents('', PUBLIC_REPO, 'published.json', 'GET', undefined, GITHUB_RAW_JSON);
+        if (data) return shapePublic(validateCloudData(data, false));
+      } catch (error) { /* API 不可达或限流时，继续读取公开站点中的数据文件。 */ }
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), GITHUB_TIMEOUT_MS);
+      try {
+        const res = await fetch('published.json?t=' + Date.now(), { cache: 'no-store', signal: controller.signal });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return shapePublic(validateCloudData(await res.json(), false));
+      } catch (error) {
+        throw cloudError('无法读取公开文章，请检查网络后刷新', 'PUBLIC_UNAVAILABLE');
+      } finally { clearTimeout(timer); }
     }
     return loadData();
   }
@@ -362,14 +408,23 @@
 
     if (remoteAdmin()) {
       const token = githubToken();
-      await putGithubJson(token, PRIVATE_REPO, 'blog.json', next, 'Save blog data');
       const published = publishedPayload(next);
       const serialized = JSON.stringify(published);
+      const privateJson = JSON.stringify(next);
+      // 两份文件都先校验，避免私有数据写入后才发现公开文件超过容量。
+      checkGithubSize(privateJson);
+      checkGithubSize(serialized);
+      await putGithubJson(token, PRIVATE_REPO, 'blog.json', privateJson, 'Save blog data');
+      _cache = next;
       if (serialized !== lastPublishedJson) {
-        await putGithubJson(token, PUBLIC_REPO, 'published.json', published, 'Publish articles');
+        try { await putGithubJson(token, PUBLIC_REPO, 'published.json', serialized, 'Publish articles'); }
+        catch (cause) {
+          const error = cloudError('文章已保存到云端，但公开网站同步未完成：' + cause.message + '。请重试保存以继续同步', 'GITHUB_PUBLIC_SYNC');
+          error.saved = true;
+          throw error;
+        }
         lastPublishedJson = serialized;
       }
-      _cache = next;
       return next;
     }
 
@@ -445,7 +500,12 @@
         item = normalizeArticle({ ...list[idx], ...article, updatedAt: now });
         list[idx] = item;
       } else {
-        item = normalizeArticle({ ...article, updatedAt: now });
+        item = normalizeArticle({
+          ...article,
+          slug: article.slug || slugify(article.title),
+          publishedAt: article.status === STATUS.PUBLISHED ? now : (article.publishedAt || now),
+          updatedAt: now,
+        });
         list.push(item);
       }
     } else {

@@ -445,7 +445,7 @@ function demo() {
 
   function collect() {
     return {
-      id: state.article ? state.article.id : undefined,
+      id: state.article ? state.article.id : (state.newId || (state.newId = S().genId())),
       title: dom.title.value.trim(),
       category: dom.category.value.trim() || '未分类',
       tags: dom.tags.value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
@@ -504,7 +504,7 @@ function demo() {
       if (done) done(saved, msg);
     } catch (err) {
       setSaveState('error', err.message);
-      alert('保存失败：' + err.message);
+      alert((err.saved ? '公开同步未完成：' : '保存失败：') + err.message);
     }
   }
 
@@ -557,6 +557,7 @@ function demo() {
     dom.catList.innerHTML = cats.map(c => `<option value="${c}">`).join('');
 
     const src = draft || article || {};
+    if (!article && src.id) state.newId = src.id;
     dom.title.value = src.title || '';
     dom.category.value = src.category || '';
     dom.tags.value = Array.isArray(src.tags) ? src.tags.join(', ') : (src.tags || '');
