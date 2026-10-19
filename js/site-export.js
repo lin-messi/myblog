@@ -84,10 +84,25 @@
       excerpt: String(a.excerpt || window.MD.plain(a.body).slice(0, 160)), category: String(a.category || '未分类'),
       tags: (Array.isArray(a.tags) ? a.tags : []).map(String), cover: String(a.cover || ''),
       pinned: !!a.pinned, featured: !!a.featured, publishedAt: a.publishedAt, updatedAt: a.updatedAt,
+      seriesId: String(a.seriesId || ''), seriesGroupId: String(a.seriesGroupId || ''),
+      seriesOrder: (a.seriesOrder === '' || a.seriesOrder == null) ? null : Number(a.seriesOrder),
       page: `post-${fileKey(a.id)}.html`,
     })).sort((a, b) => Number(b.pinned) - Number(a.pinned) || (date(b.publishedAt)?.getTime() || 0) - (date(a.publishedAt)?.getTime() || 0));
     if (new Set(articles.map(a => a.page)).size !== articles.length) throw new Error('文章标识重复，请先修正文章数据');
     const byId = new Map(articles.map(a => [a.id, a]));
+    const seriesList = (data.series || []).map(s => ({
+      id: String(s.id), title: String(s.title || '未命名系列'), description: String(s.description || ''),
+      cover: String(s.cover || ''), order: s.order, status: s.status,
+      groups: Array.isArray(s.groups) ? s.groups.map(g => ({ id: String(g.id), title: String(g.title || '未命名分组'), order: g.order })).sort((a, b) => (a.order - b.order) || a.id.localeCompare(b.id)) : [],
+    })).sort((a, b) => (a.order - b.order) || a.title.localeCompare(b.title));
+    const seriesById = new Map(seriesList.map(s => [s.id, s]));
+    const seriesPage = s => 'series-' + fileKey(s.id) + '.html';
+    const seriesChapters = new Map();
+    for (const s of seriesList) seriesChapters.set(s.id, window.BlogStorage.sortSeriesArticles(s, articles.filter(a => a.seriesId === s.id)));
+    const publicSeries = seriesList.filter(s => (seriesChapters.get(s.id) || []).length > 0);
+    seriesById.clear();
+    publicSeries.forEach(s => seriesById.set(s.id, s));
+    const chapterLink = a => `<a class="chapter-link" href="${a.page}"><span class="cl-order">${a.seriesOrder == null ? '·' : a.seriesOrder}</span><span class="cl-title">${esc(a.title)}</span></a>`;
     const safeHref = value => {
       try {
         if (!String(value || '').trim() || String(value).startsWith('#')) return '';
@@ -121,6 +136,11 @@
             if (target) node.setAttribute('href', target.page + url.hash); else node.removeAttribute('href');
           } else if (url.origin === location.origin && /\/(index|articles)\.html$/.test(url.pathname)) {
             node.setAttribute('href', url.pathname.split('/').pop() + url.search + url.hash);
+          } else if (url.origin === location.origin && url.pathname.endsWith('/series.html')) {
+            const sid = url.searchParams.get('id');
+            if (sid && seriesById.has(sid)) node.setAttribute('href', seriesPage(seriesById.get(sid)) + url.hash);
+            else if (!sid) node.setAttribute('href', 'series.html' + url.search + url.hash);
+            else node.removeAttribute('href');
           } else if (url.origin === location.origin && url.pathname.endsWith('/admin.html')) {
             node.removeAttribute('href');
           } else if (url.origin === location.origin && !value.startsWith('http') && !value.startsWith('//')) {
@@ -144,7 +164,7 @@
     const assets = ['css/main.css', 'css/backgrounds.css', 'css/article.css', 'css/editor.css', 'css/public-site.css', 'js/backgrounds.js', 'js/public-site.js'];
     for (const name of assets) add(name, await readResource(name));
     const templates = {};
-    for (const name of ['index', 'articles', 'article']) templates[name] = await (await readResource(name + '.html')).text();
+    for (const name of ['index', 'articles', 'article', 'series']) templates[name] = await (await readResource(name + '.html')).text();
     function documentFor(name, title, description, page, image, article) {
       const doc = parser.parseFromString(templates[name], 'text/html');
       doc.querySelectorAll('script, a[href="admin.html"], meta[name="description"], meta[property^="og:"], #particle-canvas').forEach(el => el.remove());
@@ -198,12 +218,53 @@
         doc.querySelector('#toc-list').innerHTML = toc; doc.querySelector('#toc-list-mobile').innerHTML = toc;
       }
       const index = chronological.indexOf(a), prev = chronological[index - 1], next = chronological[index + 1];
-      doc.querySelector('#prev-next').innerHTML = [prev ? `<a href="${prev.page}">← 上一篇<span class="t">${esc(prev.title)}</span></a>` : '<span></span>', next ? `<a href="${next.page}" class="right">下一篇 →<span class="t">${esc(next.title)}</span></a>` : '<span></span>'].join('');
+      if (a.seriesId && seriesById.has(a.seriesId)) {
+        const s = seriesById.get(a.seriesId);
+        const chapters = seriesChapters.get(a.seriesId) || [];
+        const cidx = chapters.findIndex(c => c.id === a.id);
+        const itemsHTML = chapters.map(c => {
+          const cur = c.id === a.id ? ' class="current"' : '';
+          const order = c.seriesOrder == null ? '·' : c.seriesOrder;
+          return `<li><a href="${c.page}"${cur}>${order} ${esc(c.title)}</a></li>`;
+        }).join('');
+        const nav = doc.createElement('div'); nav.className = 'series-nav';
+        nav.innerHTML = `<div class="sn-head"><a class="sn-title" href="${seriesPage(s)}">📚 ${esc(s.title)}</a><span class="sn-count">第 ${cidx + 1} / ${chapters.length} 篇</span></div><details class="series-toc-mobile" open><summary>系列目录</summary><ul>${itemsHTML}</ul></details>`;
+        doc.querySelector('#prev-next').before(nav);
+        const prevC = cidx > 0 ? chapters[cidx - 1] : null, nextC = cidx < chapters.length - 1 ? chapters[cidx + 1] : null;
+        doc.querySelector('#prev-next').innerHTML = [prevC ? `<a href="${prevC.page}">← 上一章<span class="t">${esc(prevC.title)}</span></a>` : '<span></span>', nextC ? `<a href="${nextC.page}" class="right">下一章 →<span class="t">${esc(nextC.title)}</span></a>` : '<span></span>'].join('');
+      } else {
+        doc.querySelector('#prev-next').innerHTML = [prev ? `<a href="${prev.page}">← 上一篇<span class="t">${esc(prev.title)}</span></a>` : '<span></span>', next ? `<a href="${next.page}" class="right">下一篇 →<span class="t">${esc(next.title)}</span></a>` : '<span></span>'].join('');
+      }
       add(a.page, html(doc));
     }
+    for (const s of publicSeries) s.cover = await media(s.cover);
+    for (const s of publicSeries) {
+      progress(`正在生成系列：${s.title}`);
+      const chapters = seriesChapters.get(s.id) || [];
+      let body;
+      if (s.groups.length) {
+        const parts = s.groups.map(g => {
+          const items = chapters.filter(c => c.seriesGroupId === g.id);
+          return items.length ? `<div class="series-group"><h3 class="sg-title">${esc(g.title)}</h3><div class="sg-items">${items.map(chapterLink).join('')}</div></div>` : '';
+        }).join('');
+        const ungrouped = chapters.filter(c => !s.groups.some(g => g.id === c.seriesGroupId));
+        body = parts + (ungrouped.length ? `<div class="series-group"><h3 class="sg-title">未分组</h3><div class="sg-items">${ungrouped.map(chapterLink).join('')}</div></div>` : '');
+      } else {
+        body = `<div class="sg-items">${chapters.map(chapterLink).join('')}</div>`;
+      }
+      const doc = documentFor('series', s.title + ' · ' + site.brand, s.description, seriesPage(s), s.cover);
+      doc.querySelector('#series-container').innerHTML = `<div class="series-detail-head">${s.cover ? `<img class="sd-cover" src="${s.cover}" alt="" />` : ''}<h1>${esc(s.title)}</h1><p class="sd-desc">${esc(s.description)}</p><div class="sd-meta"><span class="sc-status ${s.status}">${s.status === 'finished' ? '已完结' : '连载中'}</span><span>${chapters.length} 篇</span></div></div><div class="series-chapters-list">${body}</div>`;
+      add(seriesPage(s), html(doc));
+    }
+    const seriesListDoc = documentFor('series', '系列 · ' + site.brand, site.description, 'series.html');
+    seriesListDoc.querySelector('#series-container').innerHTML = `<div class="list-head"><h1>系列</h1><p>共 ${publicSeries.length} 个系列</p></div><div class="series-grid">${publicSeries.map(s => `<a class="series-card-link" href="${seriesPage(s)}">${s.cover ? `<img class="sc-cover" src="${s.cover}" alt="" loading="lazy">` : '<div class="sc-cover">📚</div>'}<div class="sc-body"><div class="sc-title">${esc(s.title)}</div><div class="sc-desc">${esc(s.description)}</div><div class="sc-foot"><span class="sc-status ${s.status}">${s.status === 'finished' ? '已完结' : '连载中'}</span><span>${(seriesChapters.get(s.id) || []).length} 篇</span></div></div></a>`).join('')}</div>`;
+    add('series.html', html(seriesListDoc));
     const list = documentFor('articles', '全部文章 · ' + site.brand, site.description, 'articles.html');
     list.querySelector('#list-count').textContent = `共 ${articles.length} 篇`;
     list.querySelector('#post-grid').innerHTML = articles.map(a => card(a)).join('') + `<p id="list-empty" class="list-empty"${articles.length ? ' hidden' : ''}>没有符合条件的文章。</p>`;
+    list.querySelectorAll('.post-card').forEach((element, i) => { element.dataset.series = articles[i].seriesId; });
+    const seriesSelect = list.querySelector('#series-filter');
+    if (seriesSelect) seriesSelect.innerHTML = '<option value="">全部系列</option>' + publicSeries.map(s => `<option value="${esc(s.id)}">${esc(s.title)}</option>`).join('');
     const cats = [...new Set(articles.map(a => a.category))];
     list.querySelector('#cat-chips').innerHTML = `<button class="chip active" type="button" data-cat="all">全部</button>` + cats.map(c => `<button class="chip" type="button" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
     list.querySelector('#list-search').setAttribute('aria-label', '搜索文章');
@@ -227,7 +288,7 @@
     const background = home.createElement('script'); background.src = 'js/backgrounds.js'; home.body.insertBefore(background, home.querySelector('script'));
     add('index.html', html(home));
     if (origin) {
-      const entries = [{ page: 'index.html' }, { page: 'articles.html' }, ...articles];
+      const entries = [{ page: 'index.html' }, { page: 'articles.html' }, { page: 'series.html' }, ...articles, ...publicSeries.map(s => ({ page: seriesPage(s) }))];
       add('sitemap.xml', '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + entries.map(a => `<url><loc>${esc(new URL(a.page, origin).href)}</loc>${date(a.updatedAt) ? `<lastmod>${date(a.updatedAt).toISOString()}</lastmod>` : ''}</url>`).join('') + '</urlset>');
       add('feed.xml', '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>' + esc(site.title) + '</title><link>' + esc(origin) + '</link><description>' + esc(site.description || site.title) + '</description><language>zh-CN</language>' + chronological.map(a => `<item><title>${esc(a.title)}</title><link>${esc(new URL(a.page, origin).href)}</link><guid isPermaLink="true">${esc(new URL(a.page, origin).href)}</guid><description>${esc(a.excerpt)}</description>${date(a.publishedAt) ? `<pubDate>${date(a.publishedAt).toUTCString()}</pubDate>` : ''}</item>`).join('') + '</channel></rss>');
       add('robots.txt', 'User-agent: *\nAllow: /\nSitemap: ' + new URL('sitemap.xml', origin).href + '\n');
@@ -249,7 +310,7 @@
       try {
         const data = await window.BlogStorage.loadDataFresh();
         const attachments = await window.BlogUpload.dbAll();
-        document.getElementById('export-site-summary').textContent = `将导出 ${(data.articles || []).filter(a => a.status === 'published').length} 篇已发布文章，并保留首页、分类、标签、搜索与目录。`;
+        document.getElementById('export-site-summary').textContent = `将导出 ${(data.articles || []).filter(a => a.status === 'published').length} 篇已发布文章与 ${(data.series || []).length} 个系列，并保留首页、分类、标签、搜索、系列与目录。`;
         const list = document.getElementById('export-site-files'); list.replaceChildren();
         if (!attachments.length) list.textContent = '没有可选附件。';
         attachments.forEach(file => {

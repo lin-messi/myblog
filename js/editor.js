@@ -5,6 +5,7 @@
 (function () {
   const S = () => window.BlogStorage;
   const STATUS = { DRAFT: 'draft', PUBLISHED: 'published', UNPUBLISHED: 'unpublished' };
+  const escHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ====== 文章模板 ======
   const TEMPLATES = {
@@ -154,6 +155,18 @@ function demo() {
           </div>
           <img id="ed-cover-preview" class="cover-preview" hidden />
         </div>
+        <div class="fld">
+          <label>所属系列（可选）</label>
+          <select id="ed-series"></select>
+        </div>
+        <div class="fld">
+          <label>所属分组</label>
+          <select id="ed-series-group"></select>
+        </div>
+        <div class="fld">
+          <label>章节顺序（0 起，可留空）</label>
+          <input type="text" id="ed-series-order" placeholder="0 / 1 / 2…" inputmode="numeric" />
+        </div>
       </div>
       <div class="md-toolbar" id="ed-toolbar">
         <div class="tb-group">
@@ -224,6 +237,9 @@ function demo() {
       status: modal.querySelector('#ed-status'),
       color: modal.querySelector('#ed-color'),
       imgFile: modal.querySelector('#ed-img-file'),
+      series: modal.querySelector('#ed-series'),
+      seriesGroup: modal.querySelector('#ed-series-group'),
+      seriesOrder: modal.querySelector('#ed-series-order'),
     };
     bindEvents();
   }
@@ -259,6 +275,10 @@ function demo() {
     // 分类与标签的修改同样触发自动保存（此前未监听，只改这两项会丢稿）
     dom.category.addEventListener('input', markDirty);
     dom.tags.addEventListener('input', markDirty);
+    // 系列：切换系列时更新分组选项并清除无效分组
+    dom.series.addEventListener('change', () => { updateGroupOptions(); dom.seriesGroup.value = ''; markDirty(); });
+    dom.seriesGroup.addEventListener('change', markDirty);
+    dom.seriesOrder.addEventListener('input', markDirty);
 
     // 封面
     dom.cover.addEventListener('input', () => { updateCoverPreview(); markDirty(); });
@@ -391,6 +411,15 @@ function demo() {
     else { dom.coverPreview.hidden = true; }
   }
 
+  // 根据当前选择的系列刷新分组选项
+  function updateGroupOptions() {
+    const series = (state.allSeries || []).find(s => s.id === dom.series.value);
+    const groups = (series && series.groups) || [];
+    dom.seriesGroup.innerHTML = '<option value="">（无分组）</option>' +
+      groups.map(g => `<option value="${g.id}">${escHtml(g.title)}</option>`).join('');
+    dom.seriesGroup.disabled = !groups.length;
+  }
+
   // ====== 自动保存草稿 ======
   function markDirty() {
     state.dirty = true;
@@ -423,6 +452,9 @@ function demo() {
       excerpt: dom.excerpt.value.trim(),
       cover: dom.cover.value.trim(),
       body: dom.input.value,
+      seriesId: dom.series.value || '',
+      seriesGroupId: dom.seriesGroup.value || '',
+      seriesOrder: dom.seriesOrder.value.trim(),
     };
   }
 
@@ -532,6 +564,18 @@ function demo() {
     dom.cover.value = src.cover || '';
     dom.input.value = src.body || '';
     dom.status.value = (article && article.status) || STATUS.DRAFT;
+
+    // 系列选项（含分组联动）
+    const seriesList = (data.series || []).slice()
+      .sort((a, b) => (a.order - b.order) || String(a.title).localeCompare(String(b.title)));
+    state.allSeries = seriesList;
+    dom.series.innerHTML = '<option value="">不加入系列</option>' +
+      seriesList.map(s => `<option value="${s.id}">${escHtml(s.title)}</option>`).join('');
+    dom.series.value = src.seriesId || '';
+    updateGroupOptions();
+    dom.seriesGroup.value = src.seriesGroupId || '';
+    dom.seriesOrder.value = (src.seriesOrder == null || src.seriesOrder === '') ? '' : String(src.seriesOrder);
+
     updateCoverPreview();
     renderPreview();
     updateCount();

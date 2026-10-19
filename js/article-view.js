@@ -99,7 +99,8 @@
 
     buildTOC(article.body);
     buildLike(article);
-    buildPrevNext(article, data);
+    // 系列文章用系列内上一章/下一章；普通文章用现有导航
+    if (!buildSeriesNav(article, data)) buildPrevNext(article, data);
     buildRelated(article, data);
     buildComments(article);
   }
@@ -147,6 +148,42 @@
     }
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
+  }
+
+  // ====== 系列：信息 + 系列目录 + 系列内上下章（跨分组连续，仅已发布章节） ======
+  function buildSeriesNav(article, data) {
+    if (!article.seriesId) return false;
+    const series = (data.series || []).find(s => s.id === article.seriesId);
+    if (!series) return false;
+    const chapters = S.sortSeriesArticles(series,
+      (data.articles || []).filter(a => a.seriesId === series.id && a.status === 'published'));
+    if (!chapters.length) return false;
+
+    const idx = chapters.findIndex(a => a.id === article.id);
+    const itemsHTML = chapters.map(a => {
+      const cur = a.id === article.id ? ' class="current"' : '';
+      const order = a.seriesOrder == null ? '·' : a.seriesOrder;
+      return `<li><a href="article.html?id=${a.id}"${cur}>${order} ${esc(a.title)}</a></li>`;
+    }).join('');
+
+    // 系列信息块 + 可展开的系列目录（与“本文目录”分开）
+    const nav = document.createElement('div');
+    nav.className = 'series-nav';
+    nav.innerHTML = `
+      <div class="sn-head">
+        <a class="sn-title" href="series.html?id=${series.id}">📚 ${esc(series.title)}</a>
+        <span class="sn-count">第 ${idx + 1} / ${chapters.length} 篇</span>
+      </div>
+      <details class="series-toc-mobile"><summary>系列目录</summary><ul>${itemsHTML}</ul></details>`;
+    document.getElementById('prev-next').before(nav);
+
+    // 系列内上一章 / 下一章（跨分组连续）
+    const prev = idx > 0 ? chapters[idx - 1] : null;
+    const next = idx < chapters.length - 1 ? chapters[idx + 1] : null;
+    document.getElementById('prev-next').innerHTML =
+      (prev ? `<a href="article.html?id=${prev.id}"><span class="dir">← 上一章</span><span class="t">${esc(prev.title)}</span></a>` : '<span></span>') +
+      (next ? `<a href="article.html?id=${next.id}" class="right"><span class="dir">下一章 →</span><span class="t">${esc(next.title)}</span></a>` : '<span></span>');
+    return true;
   }
 
   // ====== 点赞 ======

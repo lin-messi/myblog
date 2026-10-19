@@ -141,6 +141,7 @@
     // ====== 文章管理（列表 + 富编辑器） ======
     let artFilter = 'all';
     let artKeyword = '';
+    let artSeries = 'all';
     const STATUS_LABEL = { draft: '草稿', published: '已发布', unpublished: '已下架' };
 
     document.querySelectorAll('#art-statustabs .stab').forEach(s => {
@@ -155,6 +156,21 @@
       artKeyword = e.target.value.trim().toLowerCase();
       renderArticleList();
     });
+    document.getElementById('art-series-filter').addEventListener('change', (e) => {
+      artSeries = e.target.value;
+      renderArticleList();
+    });
+
+    function renderSeriesFilter(d) {
+      const sel = document.getElementById('art-series-filter');
+      if (!sel) return;
+      const series = (d.series || []).slice()
+        .sort((a, b) => (a.order - b.order) || String(a.title).localeCompare(String(b.title)));
+      sel.innerHTML = '<option value="all">全部系列</option>' +
+        series.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join('');
+      if (artSeries !== 'all' && ![...sel.options].some(o => o.value === artSeries)) artSeries = 'all';
+      sel.value = artSeries;
+    }
 
     document.getElementById('add-article').addEventListener('click', () => {
       window.BlogEditor.open(null, async (saved, msg) => {
@@ -180,8 +196,12 @@
     await renderArticleList();
     async function renderArticleList() {
       const d = await loadData();
+      const seriesById = {};
+      (d.series || []).forEach(s => { seriesById[s.id] = s.title; });
+      renderSeriesFilter(d);
       let list = (d.articles || []).slice();
       if (artFilter !== 'all') list = list.filter(a => a.status === artFilter);
+      if (artSeries !== 'all') list = list.filter(a => a.seriesId === artSeries);
       if (artKeyword) {
         list = list.filter(a =>
           (a.title || '').toLowerCase().includes(artKeyword) ||
@@ -211,6 +231,7 @@
             <div class="sub">
               <span class="badge ${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
               ${a.status === 'published' && d.revisions && d.revisions[a.id] ? '<span class="badge rev">有修订</span>' : ''}
+              ${a.seriesId && seriesById[a.seriesId] ? `<span>📚 ${esc(seriesById[a.seriesId])}</span>` : ''}
               <span>${esc(a.category || '未分类')}</span>
               <span>${date}</span>
               <span>${rt.words} 字</span>
@@ -438,6 +459,161 @@
         });
       });
     }
+
+    await renderSeries();
+    function renderSeriesCard(s, d) {
+      const chapters = window.BlogStorage.sortSeriesArticles(s, (d.articles || []).filter(a => a.seriesId === s.id));
+      const groupsHTML = (s.groups || []).map(g => `
+        <div class="series-group-row">
+          <input type="text" class="series-group-title" data-gid="${g.id}" value="${esc(g.title)}" />
+          <button class="btn-mini" data-act="group-up" data-gid="${g.id}" title="上移">↑</button>
+          <button class="btn-mini" data-act="group-down" data-gid="${g.id}" title="下移">↓</button>
+          <button class="btn-mini" data-act="group-del" data-gid="${g.id}">删除分组</button>
+        </div>`).join('');
+      const chaptersHTML = chapters.map(a => `
+        <div class="series-chapter-row">
+          <span class="series-order">${a.seriesOrder == null ? '·' : a.seriesOrder}</span>
+          <span class="series-chapter-title">${esc(a.title)}</span>
+          <span class="badge ${a.status}">${STATUS_LABEL[a.status] || a.status}</span>
+          <select class="series-chapter-group" data-aid="${a.id}">
+            <option value="">无分组</option>
+            ${(s.groups || []).map(g => `<option value="${g.id}" ${a.seriesGroupId === g.id ? 'selected' : ''}>${esc(g.title)}</option>`).join('')}
+          </select>
+          <input type="text" class="series-chapter-order" data-aid="${a.id}" value="${a.seriesOrder == null ? '' : a.seriesOrder}" inputmode="numeric" placeholder="顺序" />
+          <button class="btn-mini" data-act="chapter-save" data-aid="${a.id}">保存</button>
+          <button class="btn-mini" data-act="chapter-remove" data-aid="${a.id}">移出系列</button>
+        </div>`).join('');
+      return `
+      <div class="editor-item series-card" data-sid="${s.id}">
+        <div class="item-header">
+          <span class="item-title">📚 ${esc(s.title)}</span>
+          <button class="btn-mini" data-act="series-del" data-sid="${s.id}">删除系列</button>
+        </div>
+        <div class="series-form">
+          <input data-field="title" placeholder="系列名称" value="${esc(s.title)}" />
+          <textarea data-field="description" placeholder="系列简介" rows="2">${esc(s.description || '')}</textarea>
+          <input data-field="cover" placeholder="封面 URL（可选）" value="${esc(s.cover || '')}" />
+          <div class="series-form-row">
+            <select data-field="status">
+              <option value="ongoing" ${s.status === 'ongoing' ? 'selected' : ''}>连载中</option>
+              <option value="finished" ${s.status === 'finished' ? 'selected' : ''}>已完结</option>
+            </select>
+            <input data-field="order" placeholder="显示顺序" value="${s.order}" inputmode="numeric" />
+            <button class="btn-mini" data-act="series-save" data-sid="${s.id}">保存系列</button>
+          </div>
+        </div>
+        <div class="series-groups">
+          <div class="series-groups-head">分组（可选） <button class="btn-mini" data-act="group-add" data-sid="${s.id}">＋ 添加分组</button></div>
+          ${groupsHTML}
+        </div>
+        <div class="series-chapters">
+          <div class="series-chapters-head">章节（${chapters.length} 篇）</div>
+          ${chaptersHTML || '<p style="opacity:.5;font-size:13px;">暂无文章加入该系列，可在文章编辑器里选择「所属系列」。</p>'}
+        </div>
+      </div>`;
+    }
+    async function renderSeries() {
+      const box = document.getElementById('series-list');
+      if (!box) return;
+      const d = await loadData();
+      const series = (d.series || []).slice().sort((a, b) => (a.order - b.order) || String(a.title).localeCompare(String(b.title)));
+      if (!series.length) {
+        box.innerHTML = '<p style="opacity:.5;font-style:italic;">还没有系列。点击「新建系列」创建专栏。</p>';
+        return;
+      }
+      box.innerHTML = series.map(s => renderSeriesCard(s, d)).join('');
+      bindSeriesEvents(box);
+    }
+    async function refreshSeriesAndArticles() {
+      await renderSeries();
+      await renderArticleList();
+    }
+    function bindSeriesEvents(box) {
+      box.querySelectorAll('[data-act]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const act = btn.dataset.act;
+          const sid = btn.closest('.series-card') ? btn.closest('.series-card').dataset.sid : null;
+          const gid = btn.dataset.gid;
+          const aid = btn.dataset.aid;
+          try {
+            if (act === 'series-save') {
+              const card = btn.closest('.series-card');
+              const f = {};
+              card.querySelectorAll('.series-form [data-field]').forEach(inp => { f[inp.dataset.field] = inp.value; });
+              const cur = await window.BlogStorage.getSeriesById(sid);
+              await window.BlogStorage.upsertSeries({ ...(cur || {}), title: f.title, description: f.description, cover: f.cover, status: f.status, order: f.order });
+              showToast('系列已保存'); await refreshSeriesAndArticles();
+            } else if (act === 'series-del') {
+              const s = await window.BlogStorage.getSeriesById(sid);
+              const cnt = (await loadData()).articles.filter(a => a.seriesId === sid).length;
+              if (confirm(`删除系列「${s.title}」？将解除 ${cnt} 篇文章的系列关联（正文保留，不删除文章）。`)) {
+                await window.BlogStorage.deleteSeries(sid);
+                showToast('系列已删除，文章正文保留'); await refreshSeriesAndArticles();
+              }
+            } else if (act === 'group-add') {
+              const s = await window.BlogStorage.getSeriesById(sid);
+              const name = prompt('分组名称：', '新分组');
+              if (name == null) return;
+              const groups = (s.groups || []).concat({ id: window.BlogStorage.genGroupId(), title: name.trim() || '新分组', order: (s.groups || []).length });
+              await window.BlogStorage.upsertSeries({ ...s, groups });
+              await refreshSeriesAndArticles();
+            } else if (act === 'group-del') {
+              const s = await window.BlogStorage.getSeriesById(sid);
+              const g = (s.groups || []).find(x => x.id === gid);
+              if (confirm(`删除分组「${g ? g.title : ''}」？组内文章将变为无分组（正文保留）。`)) {
+                await window.BlogStorage.deleteSeriesGroup(sid, gid);
+                showToast('分组已删除'); await refreshSeriesAndArticles();
+              }
+            } else if (act === 'group-up' || act === 'group-down') {
+              const s = await window.BlogStorage.getSeriesById(sid);
+              const groups = (s.groups || []).slice();
+              const i = groups.findIndex(x => x.id === gid);
+              const j = act === 'group-up' ? i - 1 : i + 1;
+              if (i < 0 || j < 0 || j >= groups.length) return;
+              const tmp = groups[i]; groups[i] = groups[j]; groups[j] = tmp;
+              groups.forEach((g, idx) => { g.order = idx; });
+              await window.BlogStorage.upsertSeries({ ...s, groups });
+              await refreshSeriesAndArticles();
+            } else if (act === 'chapter-save') {
+              const row = btn.closest('.series-chapter-row');
+              const order = row.querySelector('.series-chapter-order').value.trim();
+              const group = row.querySelector('.series-chapter-group').value;
+              await window.BlogStorage.upsertArticle({ id: aid, seriesGroupId: group, seriesOrder: order });
+              showToast('章节已更新'); await refreshSeriesAndArticles();
+            } else if (act === 'chapter-remove') {
+              if (confirm('将该文章移出系列？（正文保留，恢复为普通文章）')) {
+                await window.BlogStorage.upsertArticle({ id: aid, seriesId: '', seriesGroupId: '', seriesOrder: '' });
+                showToast('已移出系列'); await refreshSeriesAndArticles();
+              }
+            }
+          } catch (err) {
+            showToast('操作失败：' + err.message, true);
+          }
+        });
+      });
+      box.querySelectorAll('.series-group-title').forEach(inp => {
+        inp.addEventListener('change', async () => {
+          const sid = inp.closest('.series-card').dataset.sid;
+          const gid = inp.dataset.gid;
+          const s = await window.BlogStorage.getSeriesById(sid);
+          const groups = (s.groups || []).map(g => g.id === gid ? { ...g, title: inp.value.trim() || '未命名分组' } : g);
+          try {
+            await window.BlogStorage.upsertSeries({ ...s, groups });
+            showToast('分组已重命名');
+          } catch (err) { showToast('重命名失败：' + err.message, true); }
+          await refreshSeriesAndArticles();
+        });
+      });
+    }
+    document.getElementById('add-series').addEventListener('click', async () => {
+      const name = prompt('系列名称：', '');
+      if (name == null) return;
+      try {
+        await window.BlogStorage.upsertSeries({ title: name.trim() || '新系列' });
+        await refreshSeriesAndArticles();
+        showToast('系列已创建');
+      } catch (err) { showToast('创建失败：' + err.message, true); }
+    });
 
     document.querySelectorAll('[data-save]').forEach(btn => {
       btn.addEventListener('click', async () => {

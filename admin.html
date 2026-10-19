@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>后台管理 · MyBlog</title>
-  <link rel="stylesheet" href="css/admin.css?v=3" />
-  <link rel="stylesheet" href="css/editor.css?v=4" />
+  <link rel="stylesheet" href="css/admin.css?v=4c196054157f13c6" />
+  <link rel="stylesheet" href="css/editor.css?v=4c196054157f13c6" />
 </head>
 <body>
 
@@ -48,6 +48,7 @@
     <nav class="admin-tabs">
       <button class="tab active" data-tab="site">站点设置</button>
       <button class="tab" data-tab="articles">文章管理</button>
+      <button class="tab" data-tab="series">系列管理</button>
       <button class="tab" data-tab="projects">项目管理</button>
       <button class="tab" data-tab="contacts">联系方式</button>
       <button class="tab" data-tab="messages">留言审核</button>
@@ -99,6 +100,9 @@
             <span class="stab" data-st="unpublished">已下架</span>
           </div>
           <input type="text" id="art-search" class="art-search" placeholder="搜索标题 / 标签 / 分类…" />
+          <select id="art-series-filter" class="art-search" style="width:auto;">
+            <option value="all">全部系列</option>
+          </select>
           <button class="btn-primary" id="add-article">＋ 写文章</button>
           <label class="btn-ghost" style="cursor:pointer;padding:8px 14px;border-radius:8px;border:1px solid rgba(255,255,255,.16);">
             导入 .md
@@ -106,6 +110,14 @@
           </label>
         </div>
         <div id="art-list" class="art-list"></div>
+      </section>
+
+      <!-- 系列管理 -->
+      <section class="panel" data-panel="series" hidden>
+        <h2>系列管理</h2>
+        <p class="hint">把多篇文章组织成同一套教程或专栏，按章节顺序阅读。删除系列或分组不会删除文章正文。</p>
+        <button class="btn-primary" id="add-series">＋ 新建系列</button>
+        <div id="series-list" class="editor-list"></div>
       </section>
 
       <!-- 项目管理 -->
@@ -183,12 +195,12 @@
     </form>
   </dialog>
 
-  <script src="js/storage.js"></script>
-  <script src="js/markdown.js?v=2"></script>
-  <script src="js/editor.js"></script>
-  <script src="js/upload.js"></script>
-  <script src="js/zip.js"></script>
-  <script src="js/site-export.js"></script>
-  <script src="js/admin.js"></script>
+  <script src="js/storage.js?v=4c196054157f13c6"></script>
+  <script src="js/markdown.js?v=4c196054157f13c6"></script>
+  <script src="js/editor.js?v=4c196054157f13c6"></script>
+  <script src="js/upload.js?v=4c196054157f13c6"></script>
+  <script src="js/zip.js?v=4c196054157f13c6"></script>
+  <script src="js/site-export.js?v=4c196054157f13c6"></script>
+  <script src="js/admin.js?v=4c196054157f13c6"></script>
 </body>
 </html>

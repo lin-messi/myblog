@@ -6,6 +6,8 @@
   let allPublished = [];
   let curCat = 'all';
   let curTag = '';
+  let curSeries = '';
+  let seriesById = {};
   let keyword = '';
 
   function esc(s) {
@@ -20,15 +22,18 @@
 
     allPublished = (data.articles || []).filter(a => a.status === 'published');
 
-    // URL 预设：?tag=xxx（精确标签）/ ?cat=xxx（分类）/ ?q=xxx（关键词）
+    // URL 预设：?tag=xxx（精确标签）/ ?cat=xxx（分类）/ ?series=xxx（系列）/ ?q=xxx（关键词）
     const tagParam = qs('tag');
     const catParam = qs('cat');
+    const seriesParam = qs('series');
     const qParam = qs('q');
     if (catParam) curCat = catParam;
     if (tagParam) curTag = tagParam;
+    if (seriesParam) curSeries = seriesParam;
     if (qParam) keyword = qParam.toLowerCase();
 
     buildCatChips();
+    buildSeriesFilter(data);
     if (keyword) document.getElementById('list-search').value = qParam;
     updateTagIndicator();
 
@@ -58,9 +63,25 @@
     });
   }
 
+  function buildSeriesFilter(data) {
+    const sel = document.getElementById('series-filter');
+    if (!sel) return;
+    seriesById = {};
+    const series = (data.series || []).slice()
+      .filter(s => allPublished.some(a => a.seriesId === s.id))
+      .sort((a, b) => (a.order - b.order) || String(a.title).localeCompare(String(b.title)));
+    series.forEach(s => { seriesById[s.id] = s.title; });
+    sel.innerHTML = '<option value="">全部系列</option>' +
+      series.map(s => `<option value="${s.id}">${esc(s.title)}</option>`).join('');
+    if (curSeries && ![...sel.options].some(o => o.value === curSeries)) curSeries = '';
+    sel.value = curSeries;
+    sel.addEventListener('change', () => { curSeries = sel.value; syncURL(); renderGrid(); });
+  }
+
   function renderGrid() {
     let list = allPublished.slice();
     if (curCat !== 'all') list = list.filter(a => a.category === curCat);
+    if (curSeries) list = list.filter(a => a.seriesId === curSeries);
     if (curTag) {
       const tag = curTag.toLowerCase();
       list = list.filter(a => (a.tags || []).some(t => String(t).toLowerCase() === tag));
@@ -94,7 +115,7 @@
       ${a.pinned ? '<span class="pin-flag">置顶</span>' : ''}
       ${cover}
       <div class="pc-body">
-        <span class="pc-cat">${esc(a.category || '未分类')}</span>
+        <span class="pc-cat">${esc(a.category || '未分类')}${a.seriesId && seriesById[a.seriesId] ? ' · 📚 ' + esc(seriesById[a.seriesId]) : ''}</span>
         <h3 class="pc-title">${esc(a.title)}</h3>
         <p class="pc-excerpt">${esc(a.excerpt || '')}</p>
         <div class="pc-foot">
@@ -130,6 +151,7 @@
   function syncURL() {
     const params = new URLSearchParams();
     if (curCat && curCat !== 'all') params.set('cat', curCat);
+    if (curSeries) params.set('series', curSeries);
     if (curTag) params.set('tag', curTag);
     if (keyword) params.set('q', keyword);
     const qsStr = params.toString();

@@ -182,3 +182,28 @@
 .tok-string { color: #ce9178; }
 .tok-num { color: #b5cea8; }
 .tok-comment { color: #6a9955; font-style: italic; }
+
+/* ===== 系列管理（后台） ===== */
+.series-card .series-form { display: grid; gap: 8px; margin: 10px 0; }
+.series-card .series-form input,
+.series-card .series-form textarea,
+.series-card .series-form select {
+  padding: 7px 10px; border-radius: 8px; background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14); color: #eef; font-size: 13px;
+}
+.series-form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.series-form-row select { width: auto; }
+.series-form-row input[data-field="order"] { width: 6em; }
+.series-group-row, .series-chapter-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.series-group-row input {
+  flex: 1; min-width: 120px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.14); color: #eef; font-size: 13px;
+}
+.series-chapter-row .series-order { width: 2em; text-align: right; color: #9aa6c0; font-variant-numeric: tabular-nums; flex: none; }
+.series-chapter-row .series-chapter-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.series-chapter-row select, .series-chapter-row input {
+  padding: 6px 8px; border-radius: 8px; background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.14); color: #eef; font-size: 13px;
+}
+.series-chapter-order { width: 5em; }
+.series-groups-head, .series-chapters-head { font-size: 12px; color: #9aa6c0; margin: 12px 0 4px; display: flex; align-items: center; gap: 8px; }

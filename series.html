@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>系列 · MyBlog</title>
+  <meta name="description" content="" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('myblog_theme');
+        var theme = saved === 'light' || saved === 'dark' ? saved : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/article.css?v=4c196054157f13c6" />
+</head>
+<body class="list-page">
+  <div class="page-bg"></div>
+
+  <header class="topbar">
+    <a href="index.html" class="brand" id="nav-brand">MyBlog</a>
+    <a href="index.html">首页</a>
+    <a href="articles.html">全部文章</a>
+    <a href="series.html">系列</a>
+    <span class="spacer"></span>
+    <button id="theme-toggle" class="theme-btn" type="button" title="切换到白天模式" aria-label="切换到白天模式"><span class="theme-icon" aria-hidden="true">☀</span></button>
+    <a href="admin.html">⚙ 后台</a>
+  </header>
+
+  <div class="list-wrap">
+    <div class="series-container" id="series-container">
+      <div class="loading">正在加载…</div>
+    </div>
+  </div>
+
+  <script src="js/theme.js?v=4c196054157f13c6"></script>
+  <script src="js/storage.js?v=4c196054157f13c6"></script>
+  <script src="js/series-view.js?v=4c196054157f13c6"></script>
+</body>
+</html>

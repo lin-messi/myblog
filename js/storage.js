@@ -7,6 +7,8 @@
 
   // 文章状态常量
   const STATUS = { DRAFT: 'draft', PUBLISHED: 'published', UNPUBLISHED: 'unpublished' };
+  // 系列连载状态
+  const SERIES_STATUS = { ONGOING: 'ongoing', FINISHED: 'finished' };
 
   const DEFAULT_DATA = {
     site: {
@@ -93,6 +95,7 @@
     messages: [],
     uploads: [],
     revisions: {},
+    series: [],
     adminPasswordHash: '',
   };
 
@@ -111,6 +114,37 @@
   function writeLocal(data) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(data)); return true; }
     catch (e) { return false; }
+  }
+
+  // 章节顺序规范化：0 是有效值，空串/null/非数字按“未填写”处理
+  function normalizeOrder(v) {
+    if (v === '' || v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+  function genSeriesId() {
+    return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function genGroupId() {
+    return 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  function normalizeGroup(g) {
+    return {
+      id: g.id || genGroupId(),
+      title: g.title || '未命名分组',
+      order: (g.order == null || g.order === '') ? 0 : (Number(g.order) || 0),
+    };
+  }
+  function normalizeSeries(s) {
+    return {
+      id: s.id || genSeriesId(),
+      title: s.title || '未命名系列',
+      description: s.description || '',
+      cover: s.cover || '',
+      order: (s.order == null || s.order === '') ? 0 : (Number(s.order) || 0),
+      status: s.status === SERIES_STATUS.FINISHED ? SERIES_STATUS.FINISHED : SERIES_STATUS.ONGOING,
+      groups: Array.isArray(s.groups) ? s.groups.map(normalizeGroup).sort((a, b) => a.order - b.order || String(a.id).localeCompare(String(b.id))) : [],
+    };
   }
 
   // 为旧文章补齐新字段，保证向后兼容
@@ -133,6 +167,9 @@
       views: a.views || 0,
       likes: a.likes || 0,
       comments: Array.isArray(a.comments) ? a.comments : [],
+      seriesId: a.seriesId || '',
+      seriesGroupId: a.seriesGroupId || '',
+      seriesOrder: normalizeOrder(a.seriesOrder),
     };
   }
 
@@ -147,6 +184,7 @@
       : DEFAULT_DATA.articles.map(normalizeArticle);
     merged.drafts = data.drafts || {};
     merged.revisions = data.revisions || {};
+    merged.series = Array.isArray(data.series) ? data.series.map(normalizeSeries) : [];
     return merged;
   }
 
@@ -218,6 +256,7 @@
       tags: Array.isArray(a.tags) ? a.tags : [], cover: a.cover || '', excerpt: a.excerpt || '',
       body: a.body || '', status: 'published', pinned: !!a.pinned, featured: !!a.featured,
       publishedAt: a.publishedAt, updatedAt: a.updatedAt, views: a.views || 0, likes: a.likes || 0,
+      seriesId: a.seriesId || '', seriesGroupId: a.seriesGroupId || '', seriesOrder: normalizeOrder(a.seriesOrder),
       comments: (a.comments || []).map(c => ({ name: String(c.name || ''), content: String(c.content || ''), time: c.time || '' })),
     }));
     view.messages = (view.messages || []).map(m => ({ id: m.id, name: String(m.name || ''), content: String(m.content || ''), time: m.time || '' }));
@@ -231,13 +270,21 @@
   }
   function shapePublic(data) {
     const site = data.site || {};
+    const articles = (data.articles || []).filter(a => a && a.status === 'published');
+    const seriesIds = new Set(articles.map(a => a.seriesId).filter(Boolean));
     return {
       site: {
         title: site.title || '', brand: site.brand || '',
         heroTitles: Array.isArray(site.heroTitles) ? site.heroTitles : [],
         heroSubtitle: site.heroSubtitle || '', footer: site.footer || '', musicUrl: site.musicUrl || '',
       },
-      articles: (data.articles || []).filter(a => a && a.status === 'published'),
+      articles,
+      series: Array.isArray(data.series) ? data.series.filter(s => seriesIds.has(s.id)).map(s => {
+        const item = normalizeSeries(s);
+        const groupIds = new Set(articles.filter(a => a.seriesId === s.id).map(a => a.seriesGroupId));
+        item.groups = item.groups.filter(g => groupIds.has(g.id));
+        return item;
+      }) : [],
       projects: data.projects || [],
       contacts: data.contacts || [],
       messages: data.messages || [],
@@ -604,6 +651,74 @@
     await saveData({ revisions });
   }
 
+  // ============ 系列 / 专栏 ============
+  async function getSeriesList() {
+    const data = await loadDataFresh();
+    const series = (data.series || []).slice();
+    series.sort((a, b) => (a.order - b.order) || String(a.title).localeCompare(String(b.title)));
+    return series;
+  }
+  async function getSeriesById(id) {
+    const list = await getSeriesList();
+    return list.find(s => s.id === id) || null;
+  }
+  // 新建或更新系列；含 id 则更新，否则新建
+  async function upsertSeries(series) {
+    const data = await loadDataFresh();
+    const list = (data.series || []).slice();
+    const item = normalizeSeries(series);
+    const idx = list.findIndex(s => s.id === item.id);
+    if (idx >= 0) list[idx] = item; else list.push(item);
+    await saveData({ series: list });
+    return item;
+  }
+  // 删除系列：保留文章正文，仅清除文章上的系列关联
+  async function deleteSeries(id) {
+    const data = await loadDataFresh();
+    const series = (data.series || []).filter(s => s.id !== id);
+    const articles = (data.articles || []).map(a =>
+      (a.seriesId === id) ? { ...a, seriesId: '', seriesGroupId: '', seriesOrder: null } : a
+    );
+    await saveData({ series, articles });
+    return series;
+  }
+  // 删除分组：保留文章正文，清除该分组下文章的 group 关联
+  async function deleteSeriesGroup(seriesId, groupId) {
+    const data = await loadDataFresh();
+    const series = (data.series || []).map(s =>
+      s.id === seriesId
+        ? { ...s, groups: (s.groups || []).filter(g => g.id !== groupId) }
+        : s
+    );
+    const articles = (data.articles || []).map(a =>
+      (a.seriesId === seriesId && a.seriesGroupId === groupId) ? { ...a, seriesGroupId: '' } : a
+    );
+    await saveData({ series, articles });
+    return series;
+  }
+  // 章节排序：分组顺序 → 章节顺序（0 起始、允许留空）→ 稳定备用（updatedAt 倒序 + id）
+  function compareSeriesArticles(series, a, b) {
+    const groups = ((series && series.groups) || []).slice().sort((a, b) => (a.order - b.order) || String(a.id).localeCompare(String(b.id)));
+    const groupIndexOf = (gid) => {
+      const i = groups.findIndex(g => g.id === gid);
+      return i < 0 ? groups.length : i;
+    };
+    const ga = groupIndexOf(a && a.seriesGroupId);
+    const gb = groupIndexOf(b && b.seriesGroupId);
+    if (ga !== gb) return ga - gb;
+    const oa = normalizeOrder(a && a.seriesOrder);
+    const ob = normalizeOrder(b && b.seriesOrder);
+    const aHas = oa != null, bHas = ob != null;
+    if (aHas && bHas && oa !== ob) return oa - ob;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    const u = String((b && b.updatedAt) || '').localeCompare(String((a && a.updatedAt) || ''));
+    return u !== 0 ? u : String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+  }
+  // 按系列顺序给一组文章排序（不修改原数组）
+  function sortSeriesArticles(series, articles) {
+    return (articles || []).slice().sort((a, b) => compareSeriesArticles(series, a, b));
+  }
+
   // ============ 导入 / 导出 ============
 
   // FileReader 读 Blob 为 base64 dataURL
@@ -770,7 +885,7 @@
     if (e.key === LS_KEY) _cache = null;
   });
   window.BlogStorage = {
-    STATUS,
+    STATUS, SERIES_STATUS,
     loadData, loadDataFresh, loadPublic, saveData, sha256, exportJSON, importJSON, clearCache, isPublicMirror, githubToken, setGithubToken, addMessage,
     // 文章
     getArticles, getArticleById, upsertArticle, deleteArticle, setArticleStatus,
@@ -779,6 +894,9 @@
     saveDraft, getDraft, clearDraft,
     // 修订草稿
     saveRevision, getRevision, clearRevision,
+    // 系列
+    getSeriesList, getSeriesById, upsertSeries, deleteSeries, deleteSeriesGroup,
+    compareSeriesArticles, sortSeriesArticles, normalizeOrder, genSeriesId, genGroupId,
     // markdown 导入导出
     exportArticleMarkdown, importArticleMarkdown, articleToMarkdown,
   };
