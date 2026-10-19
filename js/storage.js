@@ -225,13 +225,13 @@
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     return new TextDecoder().decode(bytes);
   }
-  async function githubContents(token, repo, file, method, body) {
+  async function githubContents(token, repo, file, method, body, accept) {
     const res = await fetch('https://api.github.com/repos/' + repo + '/contents/' + file, {
       method: method || 'GET',
       cache: 'no-store',
       headers: {
         Authorization: 'Bearer ' + token,
-        Accept: 'application/vnd.github+json',
+        Accept: accept || 'application/vnd.github+json',
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -245,9 +245,17 @@
     return res.json();
   }
   async function readPrivateBlog() {
-    const meta = await githubContents(githubToken(), PRIVATE_REPO, 'blog.json');
-    if (!meta || !meta.content) throw new Error('还没有云端博客数据');
-    return JSON.parse(base64ToUtf8(meta.content));
+    const token = githubToken();
+    const meta = await githubContents(token, PRIVATE_REPO, 'blog.json');
+    if (!meta) throw new Error('未找到云端博客数据文件，请检查仓库和令牌权限');
+    if (meta.content) return JSON.parse(base64ToUtf8(meta.content));
+    // GitHub 对超过 1 MB 的文件返回 encoding:none 和空 content，文件仍然存在。
+    // 在同一个受认证的 API 地址读取原始 JSON，不使用公开或临时下载链接。
+    const data = await githubContents(token, PRIVATE_REPO, 'blog.json', 'GET', undefined, 'application/vnd.github.raw+json');
+    if (!data || typeof data !== 'object' || Array.isArray(data) || !Array.isArray(data.articles)) {
+      throw new Error('云端数据文件存在，但内容无法识别，请检查文件格式');
+    }
+    return data;
   }
   function publishedPayload(data) {
     const view = shapePublic(data);
